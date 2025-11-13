@@ -36,7 +36,7 @@ user_story_content = {
         "/dev/mapper/datadg-appdata /appdata",
         "User Story 7771898: Mount /appdata to EBS volume in AWS EC2 RH8.",
         "Setup so IHDC can log the data to this new appdata location.",
-        "Release notes are updated."
+        "Release notes are updated.",
     ],
     "story_points": 1,
     "description_html": "<p>As an owner of the AWS IHDC service,<br>I want to create EBS volume in new EC2 RH8 and mount to it<br>so that IHDC use it to store IHDC logs</p>",
@@ -44,7 +44,7 @@ user_story_content = {
     "title": "[IHDC] Create EBS volume in new EC2 RH8 so we can use it for loggings",
     "assigned_to": "Zblewski, Szymon",
     "state": "Closed",
-    "tags": ["EDS.BAU", "EDS.IHDC"]
+    "tags": ["EDS.BAU", "EDS.IHDC"],
 }
 
 # Prepare the payload
@@ -53,14 +53,9 @@ payload = json.dumps(
         "messages": [
             {
                 "role": "system",
-                "content": "You are an expert project management assistant. Your task is to analyze user stories and break them down into actionable tasks. Ensure that each task is clear, concise, and includes necessary details such as objectives, responsible parties, and deadlines.",
+                "content": "You are an expert project management assistant. Your task is to analyze user stories and break them down into actionable tasks. Ensure that each task is clear, concise, and includes necessary details such as objectives, responsible parties, and deadlines. Return the tasks in a structured JSON format with the following structure: { 'Work Item Type': Task, 'Description': <task_description>, 'Original Estimate': <original_estimate>, 'Title': , 'Assigned To': <assigned_to>, 'State': <state>, 'Tags': <tags> }. Each task should be an object within a 'tasks' array. Every story point is 6 hours, the total tasks estimates should sum up to the story points multiplied by 6 hours.",
             },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    user_story_content
-                ),  # Convert user story content to JSON string
-            },
+            {"role": "user", "content": json.dumps(user_story_content)},
         ],
         "temperature": 0.2,
         "n": 1,
@@ -76,4 +71,15 @@ response = requests.request("POST", url, headers=headers, data=payload)
 
 # Parse the response as JSON
 response_json = response.json()
-print(json.dumps(response_json, indent=2))  # Pretty print the JSON response
+
+# Extract the content from the response
+response_content = response_json["choices"][0]["message"]["content"]
+
+# Remove the code block formatting and parse the JSON
+response_content_json = json.loads(response_content.strip("```json\n").strip("```"))
+
+# Save the parsed JSON response to a file
+with open("response_content.json", "w") as json_file:
+    json.dump(response_content_json, json_file, indent=2)
+
+print("Response content saved to response_content.json")
