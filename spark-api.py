@@ -1,6 +1,6 @@
 import os
-import requests
 import json
+import requests
 from dotenv import load_dotenv
 
 # Load environment variables from a .env file if present
