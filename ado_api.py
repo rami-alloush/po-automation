@@ -48,7 +48,8 @@ def get_work_item(work_item_id):
             "Story Points": work_item_details["fields"].get("Microsoft.VSTS.Scheduling.StoryPoints", 0),
             "Area Path": work_item_details["fields"]["System.AreaPath"],
             "Iteration Path": work_item_details["fields"]["System.IterationPath"],
-            "url": work_item_details["url"]
+            "url": work_item_details["url"],
+            "Web URL": work_item_details["_links"]["html"]["href"]
         }
         return work_item
     else:

@@ -17,7 +17,7 @@ if "generated_tasks" not in st.session_state:
 
 # Step 1: Fetch User Story
 st.header("1. Fetch User Story")
-col1, col2 = st.columns([3, 1])
+col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
 with col1:
     user_story_id = st.text_input("Enter User Story ID", value="9960516")
 with col2:
@@ -36,8 +36,16 @@ if fetch_btn and user_story_id:
 
 if st.session_state.user_story:
     story = st.session_state.user_story
+    
+    # Display Title and Link
+    col_title, col_link = st.columns([4, 1], vertical_alignment="center")
+    with col_title:
+        st.subheader(f"{story['Title']}")
+    with col_link:
+        if "Web URL" in story:
+            st.link_button("Open in ADO ↗", story["Web URL"])
+            
     with st.expander("User Story Details", expanded=True):
-        st.markdown(f"**Title:** {story['Title']}")
         st.markdown(f"**Description:**")
         st.markdown(story['Description'], unsafe_allow_html=True)
         st.markdown(f"**Acceptance Criteria:**")
@@ -73,7 +81,7 @@ if st.session_state.generated_tasks:
     # Reorder columns
     df = df[required_columns + [c for c in df.columns if c not in required_columns]]
 
-    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+    edited_df = st.data_editor(df, num_rows="dynamic", width="stretch")
 
     # Step 4: Upload to ADO
     st.header("4. Upload to ADO")
