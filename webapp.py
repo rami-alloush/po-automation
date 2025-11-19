@@ -1,45 +1,116 @@
 import streamlit as st
+import pandas as pd
+import ado_api
+import spark_api
+import json
 
-# Title of the app
-st.title("BMI Calculator")
+st.set_page_config(page_title="ADO Task Generator", layout="wide")
 
-# Input: Weight in kilograms
-weight = st.number_input("Enter your weight (kg):", min_value=0.0, format="%.2f")
+st.title("ADO Task Generator")
+st.markdown("Generate tasks from User Stories using Spark API and upload them to Azure DevOps.")
 
-# Input: Height format selection
-height_unit = st.radio("Select your height unit:", ['Centimeters', 'Meters', 'Feet'])
+# Session State Initialization
+if "user_story" not in st.session_state:
+    st.session_state.user_story = None
+if "generated_tasks" not in st.session_state:
+    st.session_state.generated_tasks = None
 
-# Input: Height value based on selected unit
-height = st.number_input(f"Enter your height ({height_unit.lower()}):", min_value=0.0, format="%.2f")
+# Step 1: Fetch User Story
+st.header("1. Fetch User Story")
+col1, col2 = st.columns([3, 1])
+with col1:
+    user_story_id = st.text_input("Enter User Story ID", value="9960516")
+with col2:
+    fetch_btn = st.button("Fetch Story")
 
-# Calculate BMI when button is pressed
-if st.button("Calculate BMI"):
+if fetch_btn and user_story_id:
     try:
-        # Convert height to meters based on selected unit
-        if height_unit == 'Centimeters':
-            height_m = height / 100
-        elif height_unit == 'Feet':
-            height_m = height / 3.28
-        else:
-            height_m = height
+        with st.spinner("Fetching User Story..."):
+            story = ado_api.get_work_item(user_story_id)
+            st.session_state.user_story = story
+            st.success(f"Fetched: {story['Title']}")
+            # Reset generated tasks if new story fetched
+            st.session_state.generated_tasks = None 
+    except Exception as e:
+        st.error(f"Error fetching story: {e}")
 
-        # Prevent division by zero
-        if height_m <= 0:
-            st.error("Height must be greater than zero.")
-        else:
-            bmi = weight / (height_m ** 2)
-            st.success(f"Your BMI is {bmi:.2f}")
+if st.session_state.user_story:
+    story = st.session_state.user_story
+    with st.expander("User Story Details", expanded=True):
+        st.markdown(f"**Title:** {story['Title']}")
+        st.markdown(f"**Description:**")
+        st.markdown(story['Description'], unsafe_allow_html=True)
+        st.markdown(f"**Acceptance Criteria:**")
+        st.markdown(story['Acceptance Criteria'], unsafe_allow_html=True)
 
-            # BMI interpretation
-            if bmi < 16:
-                st.error("You are Extremely Underweight")
-            elif 16 <= bmi < 18.5:
-                st.warning("You are Underweight")
-            elif 18.5 <= bmi < 25:
-                st.success("You are Healthy")
-            elif 25 <= bmi < 30:
-                st.warning("You are Overweight")
+    # Step 2: Generate Tasks
+    st.header("2. Generate Tasks")
+    if st.button("Generate Tasks with Spark"):
+        try:
+            with st.spinner("Generating tasks... (this may take a moment)"):
+                tasks_response = spark_api.generate_tasks(story)
+                if "tasks" in tasks_response:
+                    st.session_state.generated_tasks = tasks_response["tasks"]
+                else:
+                    st.error("Unexpected response format from Spark API. Expected 'tasks' key.")
+                    st.json(tasks_response)
+        except Exception as e:
+            st.error(f"Error generating tasks: {e}")
+
+# Step 3: Review and Edit Tasks
+if st.session_state.generated_tasks:
+    st.header("3. Review and Edit Tasks")
+    
+    # Convert to DataFrame for editing
+    df = pd.DataFrame(st.session_state.generated_tasks)
+    
+    # Ensure columns exist
+    required_columns = ["Title", "Description", "Original Estimate", "Assigned To"]
+    for col in required_columns:
+        if col not in df.columns:
+            df[col] = ""
+            
+    # Reorder columns
+    df = df[required_columns + [c for c in df.columns if c not in required_columns]]
+
+    edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
+
+    # Step 4: Upload to ADO
+    st.header("4. Upload to ADO")
+    
+    dry_run = st.checkbox("Dry Run (Simulate upload without creating items)", value=True)
+    
+    if st.button("Create Tasks in ADO"):
+        tasks_to_create = edited_df.to_dict(orient="records")
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        success_count = 0
+        errors = []
+        
+        for i, task in enumerate(tasks_to_create):
+            status_text.text(f"Processing task {i+1}/{len(tasks_to_create)}: {task['Title']}")
+            
+            try:
+                if not dry_run:
+                    ado_api.create_task(st.session_state.user_story, task)
+                else:
+                    # Simulate delay
+                    import time
+                    time.sleep(0.5)
+                success_count += 1
+            except Exception as e:
+                errors.append(f"Failed to create '{task['Title']}': {e}")
+            
+            progress_bar.progress((i + 1) / len(tasks_to_create))
+            
+        if errors:
+            st.error(f"Completed with {len(errors)} errors.")
+            for err in errors:
+                st.write(err)
+        else:
+            if dry_run:
+                st.success(f"Dry run completed! {success_count} tasks would have been created.")
             else:
-                st.error("You are Extremely Overweight")
-    except:
-        st.error("Please enter valid numeric values.")
+                st.success(f"Successfully created {success_count} tasks in ADO!")
