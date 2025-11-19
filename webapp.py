@@ -3,6 +3,7 @@ import pandas as pd
 import ado_api
 import spark_api
 import json
+import time
 
 st.set_page_config(page_title="ADO Task Generator", layout="wide")
 
@@ -19,7 +20,7 @@ if "generated_tasks" not in st.session_state:
 st.header("1. Fetch User Story")
 col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
 with col1:
-    user_story_id = st.text_input("Enter User Story ID", value="9960516")
+    user_story_id = st.text_input("Enter User Story ID", value="9950586")
 with col2:
     fetch_btn = st.button("Fetch Story")
 
@@ -73,10 +74,13 @@ if st.session_state.generated_tasks:
     df = pd.DataFrame(st.session_state.generated_tasks)
     
     # Ensure columns exist
-    required_columns = ["Title", "Description", "Original Estimate", "Assigned To"]
+    required_columns = ["Title", "Description", "Original Estimate", "Assigned To", "Activity"]
     for col in required_columns:
         if col not in df.columns:
-            df[col] = ""
+            if col == "Activity":
+                df[col] = "Development"
+            else:
+                df[col] = ""
             
     # Reorder columns
     df = df[required_columns + [c for c in df.columns if c not in required_columns]]
@@ -105,7 +109,6 @@ if st.session_state.generated_tasks:
                     ado_api.create_task(st.session_state.user_story, task)
                 else:
                     # Simulate delay
-                    import time
                     time.sleep(0.5)
                 success_count += 1
             except Exception as e:

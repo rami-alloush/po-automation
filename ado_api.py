@@ -86,6 +86,11 @@ def create_task(parent_work_item, task_data):
             "value": task_data.get("Original Estimate")
         },
         {
+            "op": "add",
+            "path": "/fields/Microsoft.VSTS.Common.Activity",
+            "value": task_data.get("Activity", "Development")
+        },
+        {
              "op": "add",
              "path": "/relations/-",
              "value": {
@@ -117,7 +122,7 @@ def create_task(parent_work_item, task_data):
 if __name__ == "__main__":
     # Test the function
     try:
-        wi = get_work_item("9960516")
+        wi = get_work_item("9950586")
         print(json.dumps(wi, indent=2))
     except Exception as e:
         print(e)
