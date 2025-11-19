@@ -33,7 +33,7 @@ def generate_tasks(user_story_content):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert project management assistant. Your task is to analyze user stories and break them down into actionable tasks. Ensure that each task is clear, concise, and includes necessary details such as objectives, responsible parties, and deadlines. Return the tasks in a structured JSON format with the following structure: { 'Work Item Type': Task, 'Description': <task_description>, 'Original Estimate': <original_estimate>, 'Title': , 'Assigned To': <assigned_to>, 'State': <state>, 'Tags': <tags> }. Each task should be an object within a 'tasks' array. Every story point is 6 hours, the total tasks estimates should sum up to the story points multiplied by 6 hours.",
+                    "content": "You are an expert project management assistant. Your task is to analyze user stories and break them down into actionable tasks. Ensure that each task is clear, concise, and includes necessary details such as objectives, responsible parties, and deadlines. Return the tasks in a structured JSON format with the following structure: { 'tasks': [ { 'Work Item Type': 'Task', 'Description': <task_description>, 'Original Estimate': <original_estimate>, 'Title': <title>, 'Assigned To': <assigned_to>, 'State': <state>, 'Tags': <tags> } ] }. Every story point is 6 hours, the total tasks estimates should sum up to the story points multiplied by 6 hours. IMPORTANT: Output ONLY valid JSON. Do not include any conversational text, markdown formatting, or explanations.",
                 },
                 {"role": "user", "content": json.dumps(user_story_content)},
             ],
@@ -60,7 +60,15 @@ def generate_tasks(user_story_content):
 
     # Remove the code block formatting and parse the JSON
     try:
-        cleaned_content = response_content.strip().strip("```json").strip("```").strip()
+        # Find the first '{' and last '}' to extract JSON content
+        start_idx = response_content.find('{')
+        end_idx = response_content.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1:
+            cleaned_content = response_content[start_idx:end_idx+1]
+        else:
+            cleaned_content = response_content.strip()
+            
         response_content_json = json.loads(cleaned_content)
         return response_content_json
     except json.JSONDecodeError:

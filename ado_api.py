@@ -45,6 +45,7 @@ def get_work_item(work_item_id):
             "Changed By": work_item_details["fields"].get("System.ChangedBy", {}).get("displayName", ""),
             "Changed Date": work_item_details["fields"]["System.ChangedDate"],
             "Acceptance Criteria": work_item_details["fields"].get("Microsoft.VSTS.Common.AcceptanceCriteria", ""),
+            "Story Points": work_item_details["fields"].get("Microsoft.VSTS.Scheduling.StoryPoints", 0),
             "Area Path": work_item_details["fields"]["System.AreaPath"],
             "Iteration Path": work_item_details["fields"]["System.IterationPath"],
             "url": work_item_details["url"]
