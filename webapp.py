@@ -157,7 +157,7 @@ with tab2:
                     children = ado_api.get_work_items_batch(child_ids)
                     # Filter for User Stories only? Or keep all children?
                     # Usually Features have User Stories.
-                    st.session_state.t2_existing_stories = [c for c in children if c["Work Item Type"] == "User Story"]
+                    st.session_state.t2_existing_stories = [c for c in children if c["Work Item Type"] == "User Story" and c["State"] != "Removed"]
                 else:
                     st.session_state.t2_existing_stories = []
                 
@@ -276,7 +276,7 @@ with tab3:
                 
                 if child_ids:
                     children = ado_api.get_work_items_batch(child_ids)
-                    st.session_state.t3_stories = [c for c in children if c["Work Item Type"] == "User Story"]
+                    st.session_state.t3_stories = [c for c in children if c["Work Item Type"] == "User Story" and c["State"] != "Removed"]
                 else:
                     st.session_state.t3_stories = []
                 
@@ -365,12 +365,16 @@ with tab3:
              # Create a lookup for existing stories
              story_map = {str(s["ID"]): s["Title"] for s in st.session_state.t3_stories}
              
+             # Determine old order
+             sorted_stories = sorted(st.session_state.t3_stories, key=lambda x: x.get('Iteration Path', ''))
+             old_order_map = {str(s["ID"]): i + 1 for i, s in enumerate(sorted_stories)}
+
              ordered_display = []
              for i, story_id in enumerate(result["proposed_order"]):
                  s_id_str = str(story_id)
                  title = story_map.get(s_id_str, "Unknown Story")
                  ordered_display.append({
-                     "Order": i + 1,
+                     "Old Order": old_order_map.get(s_id_str, "N/A"),
                      "ID": story_id,
                      "Title": title
                  })
