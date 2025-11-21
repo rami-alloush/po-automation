@@ -76,6 +76,7 @@ def get_work_items_batch(ids):
                 "State": work_item_details["fields"]["System.State"],
                 "Story Points": work_item_details["fields"].get("Microsoft.VSTS.Scheduling.StoryPoints", 0),
                 "Acceptance Criteria": work_item_details["fields"].get("Microsoft.VSTS.Common.AcceptanceCriteria", ""),
+                "Iteration Path": work_item_details["fields"].get("System.IterationPath", ""),
              })
         return items
     else:

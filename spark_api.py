@@ -136,6 +136,70 @@ def suggest_stories(feature, existing_stories):
         # Fallback if the response isn't perfect JSON
         raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
 
+def review_plan(feature, user_stories):
+    api_key, url = get_spark_config()
+
+    # Prepare stories text
+    stories_text = ""
+    if user_stories:
+        # Sort by Iteration Path to show current order
+        sorted_stories = sorted(user_stories, key=lambda x: x.get('Iteration Path', ''))
+        for s in sorted_stories:
+            stories_text += f"- ID: {s.get('ID')}, Title: {s.get('Title')}, Iteration: {s.get('Iteration Path')}\n"
+    else:
+        stories_text = "No existing user stories found."
+
+    # Prepare the payload
+    payload = json.dumps(
+        {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert Project Manager and Scrum Master. Your task is to review a Feature and its associated User Stories (which form a plan). Analyze the execution order based on Iteration Paths. Identify any logic gaps, missing steps, or dependency issues. Suggest a better order if needed. Identify potential external dependencies. Return the result in valid JSON format: { 'suggestions': ['suggestion 1', ...], 'missing_steps': [{'Title': '...', 'Description': '...'}], 'external_dependencies': ['dep 1', ...], 'proposed_order': [id1, id2, ...] }. IMPORTANT: Output ONLY valid JSON.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Feature: {feature.get('Title')}\nDescription: {feature.get('Description')}\n\nCurrent Plan (User Stories):\n{stories_text}\n\nPlease review this plan."
+                },
+            ],
+            "temperature": 0.3,
+            "n": 1,
+            "stream": "False",
+            "presence_penalty": 0,
+            "frequency_penalty": 0,
+            "top_p": 1,
+        }
+    )
+
+    headers = {"api-key": f"{api_key}", "Content-Type": "application/json"}
+    response = requests.request("POST", url, headers=headers, data=payload)
+
+    if response.status_code != 200:
+         raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
+
+    # Parse the response as JSON
+    response_json = response.json()
+
+    # Extract the content from the response
+    response_content = response_json["choices"][0]["message"]["content"]
+
+    # Remove the code block formatting and parse the JSON
+    try:
+        # Find the first '{' and last '}' to extract JSON content
+        start_idx = response_content.find('{')
+        end_idx = response_content.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1:
+            cleaned_content = response_content[start_idx:end_idx+1]
+        else:
+            cleaned_content = response_content.strip()
+            
+        response_content_json = json.loads(cleaned_content)
+        return response_content_json
+    except json.JSONDecodeError:
+        # Fallback if the response isn't perfect JSON
+        raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
+
 if __name__ == "__main__":
     # Test data
     test_story = {

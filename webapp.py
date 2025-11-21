@@ -12,7 +12,7 @@ st.title("ADO Automation Assistant")
 st.markdown("Automate your Azure DevOps workflows with AI.")
 
 # Tabs
-tab1, tab2 = st.tabs(["Task Generator", "User Story Suggestion"])
+tab1, tab2, tab3 = st.tabs(["Task Generator", "User Story Suggestion", "Planning Revision"])
 
 # --- Tab 1: Task Generator ---
 with tab1:
@@ -238,6 +238,144 @@ with tab2:
             else:
                 msg = f"Dry run: {success_count} stories would be created." if t2_dry_run else f"Created {success_count} stories!"
                 st.success(msg)
+
+# --- Tab 3: Planning Revision ---
+with tab3:
+    st.header("Planning Revision")
+    st.markdown("Review the execution plan of a Feature and its User Stories.")
+
+    # Session State for Tab 3
+    if "t3_feature" not in st.session_state:
+        st.session_state.t3_feature = None
+    if "t3_stories" not in st.session_state:
+        st.session_state.t3_stories = []
+    if "t3_review_result" not in st.session_state:
+        st.session_state.t3_review_result = None
+
+    # Step 1: Fetch Feature
+    st.subheader("1. Fetch Feature Plan")
+    col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
+    with col1:
+        t3_feature_id = st.text_input("Enter Feature ID", key="t3_input")
+    with col2:
+        t3_fetch_btn = st.button("Fetch Plan", key="t3_fetch")
+
+    if t3_fetch_btn and t3_feature_id:
+        try:
+            with st.spinner("Fetching Feature and Stories..."):
+                feature = ado_api.get_work_item(t3_feature_id)
+                st.session_state.t3_feature = feature
+                
+                # Get children
+                child_ids = []
+                if "Relations" in feature:
+                    for rel in feature["Relations"]:
+                        if rel["rel"] == "System.LinkTypes.Hierarchy-Forward":
+                            child_id = rel["url"].split("/")[-1]
+                            child_ids.append(child_id)
+                
+                if child_ids:
+                    children = ado_api.get_work_items_batch(child_ids)
+                    st.session_state.t3_stories = [c for c in children if c["Work Item Type"] == "User Story"]
+                else:
+                    st.session_state.t3_stories = []
+                
+                st.success(f"Fetched: {feature['Title']} with {len(st.session_state.t3_stories)} stories.")
+                st.session_state.t3_review_result = None
+
+        except Exception as e:
+            st.error(f"Error fetching feature: {e}")
+
+    if st.session_state.t3_feature:
+        feature = st.session_state.t3_feature
+        st.markdown(f"**Feature: {feature['Title']}**")
+        
+        if st.session_state.t3_stories:
+            st.markdown("**Current Plan (Ordered by Iteration):**")
+            # Sort by Iteration Path
+            sorted_stories = sorted(st.session_state.t3_stories, key=lambda x: x.get('Iteration Path', ''))
+            
+            df_plan = pd.DataFrame(sorted_stories)
+            # Handle missing columns if any
+            cols_to_show = ["ID", "Title", "State", "Iteration Path"]
+            for c in cols_to_show:
+                if c not in df_plan.columns:
+                    df_plan[c] = ""
+            
+            st.dataframe(df_plan[cols_to_show], use_container_width=True)
+        else:
+            st.info("No user stories found for this feature.")
+            # Debug info
+            if "t3_stories" in st.session_state and not st.session_state.t3_stories:
+                st.write("Debug Info:")
+                if "Relations" in feature:
+                    st.write(f"Total Relations: {len(feature['Relations'])}")
+                    child_rels = [r for r in feature["Relations"] if r["rel"] == "System.LinkTypes.Hierarchy-Forward"]
+                    st.write(f"Child Relations: {len(child_rels)}")
+                    if child_rels:
+                        child_ids = [r["url"].split("/")[-1] for r in child_rels]
+                        st.write(f"Child IDs: {child_ids}")
+                        try:
+                            children = ado_api.get_work_items_batch(child_ids)
+                            types = [c["Work Item Type"] for c in children]
+                            st.write(f"Child Types: {types}")
+                        except Exception as e:
+                            st.write(f"Error fetching children details: {e}")
+                else:
+                    st.write("No Relations found in feature object.")
+
+        # Step 2: Review Plan
+        st.subheader("2. Review Plan with Spark")
+        if st.button("Review Plan", key="t3_review"):
+            try:
+                with st.spinner("Reviewing Plan..."):
+                    review_result = spark_api.review_plan(feature, st.session_state.t3_stories)
+                    st.session_state.t3_review_result = review_result
+            except Exception as e:
+                st.error(f"Error reviewing plan: {e}")
+
+    # Step 3: Display Results
+    if st.session_state.t3_review_result:
+        result = st.session_state.t3_review_result
+        st.subheader("3. Review Results")
+        
+        st.markdown("### Suggestions")
+        if "suggestions" in result and result["suggestions"]:
+            for sug in result["suggestions"]:
+                st.info(sug)
+        else:
+            st.write("No specific suggestions.")
+
+        st.markdown("### External Dependencies")
+        if "external_dependencies" in result and result["external_dependencies"]:
+            for dep in result["external_dependencies"]:
+                st.warning(dep)
+        else:
+            st.write("No external dependencies identified.")
+            
+        st.markdown("### Missing Steps")
+        if "missing_steps" in result and result["missing_steps"]:
+             df_missing = pd.DataFrame(result["missing_steps"])
+             st.table(df_missing)
+        else:
+            st.write("No missing steps identified.")
+
+        st.markdown("### Proposed Order")
+        if "proposed_order" in result and result["proposed_order"]:
+             # Create a lookup for existing stories
+             story_map = {str(s["ID"]): s["Title"] for s in st.session_state.t3_stories}
+             
+             ordered_display = []
+             for i, story_id in enumerate(result["proposed_order"]):
+                 s_id_str = str(story_id)
+                 title = story_map.get(s_id_str, "Unknown Story")
+                 ordered_display.append({
+                     "Order": i + 1,
+                     "ID": story_id,
+                     "Title": title
+                 })
+             
+             st.table(pd.DataFrame(ordered_display))
 
 if __name__ == "__main__":
     # run streamlit command
