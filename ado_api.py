@@ -49,7 +49,7 @@ def get_work_item(work_item_id):
             "Area Path": work_item_details["fields"]["System.AreaPath"],
             "Iteration Path": work_item_details["fields"]["System.IterationPath"],
             "url": work_item_details["url"],
-            "Web URL": work_item_details["_links"]["html"]["href"],
+            "Web URL": work_item_details.get("_links", {}).get("html", {}).get("href", ""),
             "Relations": work_item_details.get("relations", [])
         }
         return work_item
@@ -77,6 +77,9 @@ def get_work_items_batch(ids):
                 "Story Points": work_item_details["fields"].get("Microsoft.VSTS.Scheduling.StoryPoints", 0),
                 "Acceptance Criteria": work_item_details["fields"].get("Microsoft.VSTS.Common.AcceptanceCriteria", ""),
                 "Iteration Path": work_item_details["fields"].get("System.IterationPath", ""),
+                "Area Path": work_item_details["fields"].get("System.AreaPath", ""),
+                "url": work_item_details["url"],
+                "Web URL": work_item_details.get("_links", {}).get("html", {}).get("href", "")
              })
         return items
     else:

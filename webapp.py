@@ -20,94 +20,123 @@ with tab1:
     st.markdown("Generate tasks from User Stories using Spark API and upload them to Azure DevOps.")
 
     # Session State for Tab 1
-    if "t1_user_story" not in st.session_state:
-        st.session_state.t1_user_story = None
-    if "t1_generated_tasks" not in st.session_state:
-        st.session_state.t1_generated_tasks = None
+    if "t1_user_stories" not in st.session_state:
+        st.session_state.t1_user_stories = []
+    if "t1_generated_tasks_map" not in st.session_state:
+        st.session_state.t1_generated_tasks_map = {}
 
     # Step 1: Fetch User Story
-    st.subheader("1. Fetch User Story")
+    st.subheader("1. Fetch User Stories")
     col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
     with col1:
-        t1_user_story_id = st.text_input("Enter User Story ID", value="9950586", key="t1_input")
+        t1_user_story_ids = st.text_input("Enter User Story IDs (comma separated)", value="9950586", key="t1_input")
     with col2:
-        t1_fetch_btn = st.button("Fetch Story", key="t1_fetch")
+        t1_fetch_btn = st.button("Fetch Stories", key="t1_fetch")
 
-    if t1_fetch_btn and t1_user_story_id:
+    if t1_fetch_btn and t1_user_story_ids:
         try:
-            with st.spinner("Fetching User Story..."):
-                story = ado_api.get_work_item(t1_user_story_id)
-                st.session_state.t1_user_story = story
-                st.success(f"Fetched: {story['Title']}")
-                st.session_state.t1_generated_tasks = None 
+            with st.spinner("Fetching User Stories..."):
+                # Split and clean IDs
+                ids = [x.strip() for x in t1_user_story_ids.split(",") if x.strip()]
+                if ids:
+                    stories = ado_api.get_work_items_batch(ids)
+                    st.session_state.t1_user_stories = stories
+                    st.success(f"Fetched {len(stories)} stories.")
+                    # Reset generated tasks when new stories are fetched
+                    st.session_state.t1_generated_tasks_map = {}
+                else:
+                    st.warning("Please enter at least one ID.")
         except Exception as e:
-            st.error(f"Error fetching story: {e}")
+            st.error(f"Error fetching stories: {e}")
 
-    if st.session_state.t1_user_story:
-        story = st.session_state.t1_user_story
-        
-        col_title, col_link = st.columns([4, 1], vertical_alignment="center")
-        with col_title:
-            st.markdown(f"**{story['Title']}**")
-        with col_link:
-            if "Web URL" in story:
-                st.link_button("Open in ADO ↗", story["Web URL"])
-                
-        with st.expander("User Story Details", expanded=False):
-            st.markdown(f"**Description:**")
-            st.markdown(story['Description'], unsafe_allow_html=True)
-            st.markdown(f"**Acceptance Criteria:**")
-            st.markdown(story['Acceptance Criteria'], unsafe_allow_html=True)
+    if st.session_state.t1_user_stories:
+        st.markdown("### Fetched Stories")
+        for story in st.session_state.t1_user_stories:
+             with st.expander(f"{story['ID']}: {story['Title']}", expanded=False):
+                st.markdown(f"**Description:**")
+                st.markdown(story['Description'], unsafe_allow_html=True)
+                st.markdown(f"**Acceptance Criteria:**")
+                st.markdown(story['Acceptance Criteria'], unsafe_allow_html=True)
+                if "Web URL" in story:
+                     st.link_button("Open in ADO ↗", story["Web URL"])
 
         # Step 2: Generate Tasks
         st.subheader("2. Generate Tasks")
-        if st.button("Generate Tasks with Spark", key="t1_gen"):
-            try:
-                with st.spinner("Generating tasks..."):
+        if st.button("Generate Tasks for ALL Stories", key="t1_gen"):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for i, story in enumerate(st.session_state.t1_user_stories):
+                status_text.text(f"Generating tasks for {story['ID']}...")
+                try:
                     tasks_response = spark_api.generate_tasks(story)
                     if "tasks" in tasks_response:
-                        st.session_state.t1_generated_tasks = tasks_response["tasks"]
+                        st.session_state.t1_generated_tasks_map[story['ID']] = tasks_response["tasks"]
                     else:
-                        st.error("Unexpected response format from Spark API.")
-                        st.json(tasks_response)
-            except Exception as e:
-                st.error(f"Error generating tasks: {e}")
+                        st.error(f"Unexpected response format for story {story['ID']}.")
+                except Exception as e:
+                    st.error(f"Error generating tasks for {story['ID']}: {e}")
+                progress_bar.progress((i + 1) / len(st.session_state.t1_user_stories))
+            
+            st.success("Task generation complete!")
 
     # Step 3: Review and Edit Tasks
-    if st.session_state.t1_generated_tasks:
+    if st.session_state.t1_generated_tasks_map:
         st.subheader("3. Review and Edit Tasks")
         
-        df = pd.DataFrame(st.session_state.t1_generated_tasks)
-        required_columns = ["Title", "Description", "Original Estimate", "Assigned To", "Activity"]
-        for col in required_columns:
-            if col not in df.columns:
-                df[col] = "Development" if col == "Activity" else ""
+        t1_final_tasks_map = {}
+
+        for story in st.session_state.t1_user_stories:
+            if story['ID'] in st.session_state.t1_generated_tasks_map:
+                st.markdown(f"#### Tasks for {story['ID']}: {story['Title']}")
                 
-        df = df[required_columns + [c for c in df.columns if c not in required_columns]]
-        t1_edited_df = st.data_editor(df, num_rows="dynamic", width="stretch", key="t1_editor")
+                tasks = st.session_state.t1_generated_tasks_map[story['ID']]
+                df = pd.DataFrame(tasks)
+                
+                required_columns = ["Title", "Description", "Original Estimate", "Assigned To", "Activity"]
+                for col in required_columns:
+                    if col not in df.columns:
+                        df[col] = "Development" if col == "Activity" else ""
+                        
+                df = df[required_columns + [c for c in df.columns if c not in required_columns]]
+                
+                # Unique key for each editor
+                editor_key = f"t1_editor_{story['ID']}"
+                edited_df = st.data_editor(df, num_rows="dynamic", width="stretch", key=editor_key)
+                
+                t1_final_tasks_map[story['ID']] = edited_df.to_dict(orient="records")
 
         # Step 4: Upload to ADO
         st.subheader("4. Upload to ADO")
         t1_dry_run = st.checkbox("Dry Run", value=True, key="t1_dry")
         
-        if st.button("Create Tasks in ADO", key="t1_create"):
-            tasks_to_create = t1_edited_df.to_dict(orient="records")
+        if st.button("Create Tasks in ADO (All Stories)", key="t1_create"):
+            total_tasks = sum(len(tasks) for tasks in t1_final_tasks_map.values())
             progress_bar = st.progress(0)
             status_text = st.empty()
             success_count = 0
             errors = []
+            processed_count = 0
             
-            for i, task in enumerate(tasks_to_create):
-                status_text.text(f"Processing: {task['Title']}")
-                try:
-                    if not t1_dry_run:
-                        ado_api.create_task(st.session_state.t1_user_story, task)
-                    else:
-                        time.sleep(0.5)
-                    success_count += 1
-                except Exception as e:
-                    errors.append(f"Failed '{task['Title']}': {e}")
-                progress_bar.progress((i + 1) / len(tasks_to_create))
+            for story in st.session_state.t1_user_stories:
+                story_id = story['ID']
+                if story_id in t1_final_tasks_map:
+                    tasks_to_create = t1_final_tasks_map[story_id]
+                    
+                    for task in tasks_to_create:
+                        processed_count += 1
+                        status_text.text(f"Processing: {task['Title']} (Story {story_id})")
+                        try:
+                            if not t1_dry_run:
+                                ado_api.create_task(story, task)
+                            else:
+                                time.sleep(0.2)
+                            success_count += 1
+                        except Exception as e:
+                            errors.append(f"Failed '{task['Title']}' (Story {story_id}): {e}")
+                        
+                        if total_tasks > 0:
+                            progress_bar.progress(processed_count / total_tasks)
                 
             if errors:
                 st.error(f"Completed with {len(errors)} errors.")
