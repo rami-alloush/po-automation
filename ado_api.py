@@ -24,7 +24,7 @@ project = "Platts"
 
 def get_work_item(work_item_id):
     # Azure DevOps REST API URL
-    url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/workitems/{work_item_id}?api-version=6.0"
+    url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/workitems/{work_item_id}?$expand=relations&api-version=6.0"
 
     # Make the request
     response = requests.get(url, auth=HTTPBasicAuth("", pat_token))
@@ -49,26 +49,55 @@ def get_work_item(work_item_id):
             "Area Path": work_item_details["fields"]["System.AreaPath"],
             "Iteration Path": work_item_details["fields"]["System.IterationPath"],
             "url": work_item_details["url"],
-            "Web URL": work_item_details["_links"]["html"]["href"]
+            "Web URL": work_item_details["_links"]["html"]["href"],
+            "Relations": work_item_details.get("relations", [])
         }
         return work_item
     else:
         raise Exception(f"Failed to retrieve work item: {response.status_code} - {response.text}")
 
-def create_task(parent_work_item, task_data):
-    url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/workitems/$Task?api-version=6.0"
+def get_work_items_batch(ids):
+    if not ids:
+        return []
+    
+    ids_str = ",".join(map(str, ids))
+    url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/workitems?ids={ids_str}&api-version=6.0"
+    
+    response = requests.get(url, auth=HTTPBasicAuth("", pat_token))
+    
+    if response.status_code == 200:
+        items = []
+        for work_item_details in response.json()["value"]:
+             items.append({
+                "ID": work_item_details["id"],
+                "Work Item Type": work_item_details["fields"]["System.WorkItemType"],
+                "Description": work_item_details["fields"].get("System.Description", ""),
+                "Title": work_item_details["fields"]["System.Title"],
+                "State": work_item_details["fields"]["System.State"],
+                "Story Points": work_item_details["fields"].get("Microsoft.VSTS.Scheduling.StoryPoints", 0),
+                "Acceptance Criteria": work_item_details["fields"].get("Microsoft.VSTS.Common.AcceptanceCriteria", ""),
+             })
+        return items
+    else:
+        raise Exception(f"Failed to retrieve work items batch: {response.status_code} - {response.text}")
+
+def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
+    # work_item_type should be 'Task' or 'User Story' etc.
+    # The API expects $Task or $User%20Story
+    type_encoded = work_item_type.replace(" ", "%20")
+    url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/workitems/${type_encoded}?api-version=6.0"
     
     # Construct the JSON Patch document
     patch_document = [
         {
             "op": "add",
             "path": "/fields/System.Title",
-            "value": task_data.get("Title")
+            "value": item_data.get("Title")
         },
         {
             "op": "add",
             "path": "/fields/System.Description",
-            "value": task_data.get("Description")
+            "value": item_data.get("Description")
         },
         {
             "op": "add",
@@ -81,16 +110,6 @@ def create_task(parent_work_item, task_data):
             "value": parent_work_item["Iteration Path"]
         },
         {
-            "op": "add",
-            "path": "/fields/Microsoft.VSTS.Scheduling.OriginalEstimate",
-            "value": task_data.get("Original Estimate")
-        },
-        {
-            "op": "add",
-            "path": "/fields/Microsoft.VSTS.Common.Activity",
-            "value": task_data.get("Activity", "Development")
-        },
-        {
              "op": "add",
              "path": "/relations/-",
              "value": {
@@ -100,11 +119,37 @@ def create_task(parent_work_item, task_data):
         }
     ]
 
-    if "Assigned To" in task_data and task_data["Assigned To"]:
+    # Add type-specific fields
+    if work_item_type == "Task":
+        patch_document.append({
+            "op": "add",
+            "path": "/fields/Microsoft.VSTS.Scheduling.OriginalEstimate",
+            "value": item_data.get("Original Estimate")
+        })
+        patch_document.append({
+            "op": "add",
+            "path": "/fields/Microsoft.VSTS.Common.Activity",
+            "value": item_data.get("Activity", "Development")
+        })
+    elif work_item_type == "User Story":
+        if "Acceptance Criteria" in item_data:
+             patch_document.append({
+                "op": "add",
+                "path": "/fields/Microsoft.VSTS.Common.AcceptanceCriteria",
+                "value": item_data.get("Acceptance Criteria")
+            })
+        if "Story Points" in item_data:
+             patch_document.append({
+                "op": "add",
+                "path": "/fields/Microsoft.VSTS.Scheduling.StoryPoints",
+                "value": item_data.get("Story Points")
+            })
+
+    if "Assigned To" in item_data and item_data["Assigned To"]:
          patch_document.append({
             "op": "add",
             "path": "/fields/System.AssignedTo",
-            "value": task_data["Assigned To"]
+            "value": item_data["Assigned To"]
         })
 
     response = requests.post(
@@ -117,7 +162,10 @@ def create_task(parent_work_item, task_data):
     if response.status_code == 200:
         return response.json()
     else:
-        raise Exception(f"Failed to create task: {response.status_code} - {response.text}")
+        raise Exception(f"Failed to create {work_item_type}: {response.status_code} - {response.text}")
+
+def create_task(parent_work_item, task_data):
+    return create_child_work_item(parent_work_item, task_data, "Task")
 
 if __name__ == "__main__":
     # Test the function
