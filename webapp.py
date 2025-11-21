@@ -12,7 +12,7 @@ st.title("ADO Automation Assistant")
 st.markdown("Automate your Azure DevOps workflows with AI.")
 
 # Tabs
-tab1, tab2, tab3 = st.tabs(["Task Generator", "User Story Suggestion", "Planning Revision"])
+tab2, tab1, tab3 = st.tabs(["User Story Suggestion", "Task Generator", "Planning Revision"])
 
 # --- Tab 1: Task Generator ---
 with tab1:
