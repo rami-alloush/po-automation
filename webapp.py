@@ -12,7 +12,7 @@ st.title("ADO Automation Assistant")
 st.markdown("Automate your Azure DevOps workflows with AI.")
 
 # Tabs
-tab2, tab1, tab3 = st.tabs(["User Story Suggestion", "Task Generator", "Planning Revision"])
+tab2, tab1, tab3, tab4 = st.tabs(["User Story Suggestion", "Task Generator", "Planning Revision", "Feature Details"])
 
 # --- Tab 1: Task Generator ---
 with tab1:
@@ -268,10 +268,10 @@ with tab2:
                 msg = f"Dry run: {success_count} stories would be created." if t2_dry_run else f"Created {success_count} stories!"
                 st.success(msg)
 
-# --- Tab 3: Planning Revision ---
+# --- Tab 3: Plan Review ---
 with tab3:
-    st.header("Planning Revision")
-    st.markdown("Review the execution plan of a Feature and its User Stories.")
+    st.header("Plan Review")
+    st.markdown("Review an existing Feature's plan (User Stories, Iterations, etc.)")
 
     # Session State for Tab 3
     if "t3_feature" not in st.session_state:
@@ -381,7 +381,7 @@ with tab3:
                 st.warning(dep)
         else:
             st.write("No external dependencies identified.")
-            
+
         st.markdown("### Missing Steps")
         if "missing_steps" in result and result["missing_steps"]:
              df_missing = pd.DataFrame(result["missing_steps"])
@@ -389,26 +389,170 @@ with tab3:
         else:
             st.write("No missing steps identified.")
 
-        st.markdown("### Proposed Order")
-        if "proposed_order" in result and result["proposed_order"]:
-             # Create a lookup for existing stories
-             story_map = {str(s["ID"]): s["Title"] for s in st.session_state.t3_stories}
-             
-             # Determine old order
-             sorted_stories = sorted(st.session_state.t3_stories, key=lambda x: x.get('Iteration Path', ''))
-             old_order_map = {str(s["ID"]): i + 1 for i, s in enumerate(sorted_stories)}
+        st.markdown("### Iteration Path Analysis")
+        if "iteration_path_analysis" in result and result["iteration_path_analysis"]:
+            ordered_display = []
+            for path, details in result["iteration_path_analysis"].items():
+                ordered_display.append({
+                    "Iteration Path": path,
+                    "Story Count": details.get("story_count", 0),
+                    "Total Story Points": details.get("total_story_points", 0),
+                    "Status": details.get("status", "N/A")
+                })
+            st.table(pd.DataFrame(ordered_display))
 
-             ordered_display = []
-             for i, story_id in enumerate(result["proposed_order"]):
-                 s_id_str = str(story_id)
-                 title = story_map.get(s_id_str, "Unknown Story")
-                 ordered_display.append({
-                     "Old Order": old_order_map.get(s_id_str, "N/A"),
-                     "ID": story_id,
-                     "Title": title
-                 })
-             
-             st.table(pd.DataFrame(ordered_display))
+# --- Tab 4: Feature Details ---
+with tab4:
+    st.header("Feature Details Generator")
+    st.markdown("Generate Feature details (Description, Dependencies, NFRs, AC) from User Stories.")
+
+    # Session State
+    if "t4_features" not in st.session_state:
+        st.session_state.t4_features = {} # Map ID -> {feature, stories, generated_details}
+
+    # Step 1: Fetch Features
+    st.subheader("1. Fetch Features")
+    col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
+    with col1:
+        t4_feature_ids = st.text_input("Enter Feature IDs (comma separated)", key="t4_input")
+    with col2:
+        t4_fetch_btn = st.button("Fetch Features", key="t4_fetch")
+
+    if t4_fetch_btn and t4_feature_ids:
+        try:
+            with st.spinner("Fetching Features and Stories..."):
+                ids = [x.strip() for x in t4_feature_ids.split(",") if x.strip()]
+                if ids:
+                    st.session_state.t4_features = {}
+                    for f_id in ids:
+                        feature = ado_api.get_work_item(f_id)
+                        
+                        # Get children
+                        child_ids = []
+                        if "Relations" in feature:
+                            for rel in feature["Relations"]:
+                                if rel["rel"] == "System.LinkTypes.Hierarchy-Forward":
+                                    child_id = rel["url"].split("/")[-1]
+                                    child_ids.append(child_id)
+                        
+                        stories = []
+                        if child_ids:
+                            children = ado_api.get_work_items_batch(child_ids)
+                            stories = [c for c in children if c["Work Item Type"] == "User Story" and c["State"] != "Removed"]
+                        
+                        st.session_state.t4_features[f_id] = {
+                            "feature": feature,
+                            "stories": stories,
+                            "generated_details": None
+                        }
+                    st.success(f"Fetched {len(st.session_state.t4_features)} features.")
+        except Exception as e:
+            st.error(f"Error fetching features: {e}")
+
+    # Step 2: Generate Details
+    if st.session_state.t4_features:
+        st.subheader("2. Generate Details")
+        if st.button("Generate Details for ALL Features", key="t4_gen"):
+            progress_bar = st.progress(0)
+            for i, (f_id, data) in enumerate(st.session_state.t4_features.items()):
+                try:
+                    details = spark_api.generate_feature_details(data["feature"], data["stories"])
+                    st.session_state.t4_features[f_id]["generated_details"] = details
+                    
+                    # Update session state for text areas immediately
+                    st.session_state[f"t4_desc_{f_id}"] = details.get("description", "")
+                    st.session_state[f"t4_dep_{f_id}"] = details.get("external_dependencies", "")
+                    st.session_state[f"t4_nfr_{f_id}"] = details.get("non_functional_requirements", "")
+                    st.session_state[f"t4_ac_{f_id}"] = details.get("acceptance_criteria", "")
+                    
+                except Exception as e:
+                    st.error(f"Error generating details for {f_id}: {e}")
+                progress_bar.progress((i + 1) / len(st.session_state.t4_features))
+            st.success("Generation complete!")
+            time.sleep(1)
+            st.rerun()
+
+        # Step 3: Review and Edit
+        st.subheader("3. Review and Edit")
+        
+        t4_updates_map = {} # Map ID -> {field: value}
+
+        for f_id, data in st.session_state.t4_features.items():
+            feature = data["feature"]
+            
+            # Initialize session state if not present (first load)
+            if f"t4_desc_{f_id}" not in st.session_state:
+                st.session_state[f"t4_desc_{f_id}"] = feature.get("Description", "")
+            if f"t4_dep_{f_id}" not in st.session_state:
+                st.session_state[f"t4_dep_{f_id}"] = feature.get("External Dependencies", "")
+            if f"t4_nfr_{f_id}" not in st.session_state:
+                st.session_state[f"t4_nfr_{f_id}"] = feature.get("Non Functional Requirements", "")
+            if f"t4_ac_{f_id}" not in st.session_state:
+                st.session_state[f"t4_ac_{f_id}"] = feature.get("Acceptance Criteria", "")
+
+            with st.expander(f"{feature['ID']}: {feature['Title']}", expanded=True):
+                
+                # Description
+                st.markdown("**Description**")
+                with st.expander("Preview", expanded=False):
+                    st.markdown(st.session_state[f"t4_desc_{f_id}"], unsafe_allow_html=True)
+                st.text_area("Description HTML", key=f"t4_desc_{f_id}", height=200)
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    # External Dependencies
+                    st.markdown("**External Dependencies**")
+                    with st.expander("Preview", expanded=False):
+                        st.markdown(st.session_state[f"t4_dep_{f_id}"], unsafe_allow_html=True)
+                    st.text_area("Dependencies HTML", key=f"t4_dep_{f_id}", height=200)
+                
+                with col2:
+                    # Non Functional Requirements
+                    st.markdown("**Non Functional Requirements**")
+                    with st.expander("Preview", expanded=False):
+                        st.markdown(st.session_state[f"t4_nfr_{f_id}"], unsafe_allow_html=True)
+                    st.text_area("NFRs HTML", key=f"t4_nfr_{f_id}", height=200)
+
+                # Acceptance Criteria
+                st.markdown("**Acceptance Criteria**")
+                with st.expander("Preview", expanded=False):
+                    st.markdown(st.session_state[f"t4_ac_{f_id}"], unsafe_allow_html=True)
+                st.text_area("Acceptance Criteria HTML", key=f"t4_ac_{f_id}", height=200)
+                
+                t4_updates_map[f_id] = {
+                    "System.Description": st.session_state[f"t4_desc_{f_id}"],
+                    "Custom.ExternalDependencies": st.session_state[f"t4_dep_{f_id}"],
+                    "Custom.NonFunctionalRequirements_MI": st.session_state[f"t4_nfr_{f_id}"],
+                    "Microsoft.VSTS.Common.AcceptanceCriteria": st.session_state[f"t4_ac_{f_id}"]
+                }
+
+        # Step 4: Upload
+        st.subheader("4. Upload to ADO")
+        t4_dry_run = st.checkbox("Dry Run", value=True, key="t4_dry")
+        
+        if st.button("Update Features in ADO", key="t4_update"):
+            progress_bar = st.progress(0)
+            success_count = 0
+            errors = []
+            
+            for i, (f_id, updates) in enumerate(t4_updates_map.items()):
+                try:
+                    if not t4_dry_run:
+                        ado_api.update_work_item(f_id, updates)
+                    else:
+                        time.sleep(0.5)
+                    success_count += 1
+                except Exception as e:
+                    errors.append(f"Failed {f_id}: {e}")
+                progress_bar.progress((i + 1) / len(t4_updates_map))
+            
+            if errors:
+                st.error(f"Completed with {len(errors)} errors.")
+                for err in errors:
+                    st.write(err)
+            else:
+                 msg = f"Dry run: {success_count} features would be updated." if t4_dry_run else f"Updated {success_count} features!"
+                 st.success(msg)
 
 if __name__ == "__main__":
     # run streamlit command

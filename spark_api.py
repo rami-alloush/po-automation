@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import re
 from dotenv import load_dotenv
 
 # Load environment variables from a .env file if present
@@ -160,6 +161,76 @@ def review_plan(feature, user_stories):
                 {
                     "role": "user",
                     "content": f"Feature: {feature.get('Title')}\nDescription: {feature.get('Description')}\n\nCurrent Plan (User Stories):\n{stories_text}\n\nPlease review this plan."
+                },
+            ],
+            "temperature": 0.3,
+            "n": 1,
+            "stream": "False",
+            "presence_penalty": 0,
+            "frequency_penalty": 0,
+            "top_p": 1,
+        }
+    )
+
+    headers = {"api-key": f"{api_key}", "Content-Type": "application/json"}
+    response = requests.request("POST", url, headers=headers, data=payload)
+
+    if response.status_code != 200:
+         raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
+
+    # Parse the response as JSON
+    response_json = response.json()
+
+    # Extract the content from the response
+    response_content = response_json["choices"][0]["message"]["content"]
+
+    # Remove the code block formatting and parse the JSON
+    try:
+        # Find the first '{' and last '}' to extract JSON content
+        start_idx = response_content.find('{')
+        end_idx = response_content.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1:
+            cleaned_content = response_content[start_idx:end_idx+1]
+        else:
+            cleaned_content = response_content.strip()
+            
+        response_content_json = json.loads(cleaned_content)
+        return response_content_json
+    except json.JSONDecodeError:
+        # Fallback if the response isn't perfect JSON
+        raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
+
+def strip_html(text):
+    if not text:
+        return ""
+    clean = re.compile('<.*?>')
+    return re.sub(clean, '', text)
+
+def generate_feature_details(feature, user_stories):
+    api_key, url = get_spark_config()
+
+    # Prepare stories text
+    stories_text = ""
+    if user_stories:
+        for s in user_stories:
+            desc = strip_html(s.get('Description', ''))
+            ac = strip_html(s.get('Acceptance Criteria', ''))
+            stories_text += f"- ID: {s.get('ID')}, Title: {s.get('Title')}, Description: {desc}, AC: {ac}\n"
+    else:
+        stories_text = "No existing user stories found."
+
+    # Prepare the payload
+    payload = json.dumps(
+        {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert Product Owner. Your task is to analyze a Feature and its child User Stories to generate a comprehensive Feature definition. You must generate: 1. Description (Executive summary of what the feature delivers). 2. External Dependencies (List of dependencies). 3. Non-functional Requirements (List of NFRs). 4. Acceptance Criteria (High-level ACs for the feature). Return the result in valid JSON format with these EXACT keys: { 'description': 'HTML string', 'external_dependencies': 'HTML string (ul/li) or empty string', 'non_functional_requirements': 'HTML string (ul/li) or empty string', 'acceptance_criteria': 'HTML string (ul/li)' }. If there are no dependencies or NFRs, return an empty string or '<ul><li>None</li></ul>'. IMPORTANT: Output ONLY valid JSON.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Feature Title: {feature.get('Title')}\n\nUser Stories:\n{stories_text}\n\nGenerate the feature details based on these stories."
                 },
             ],
             "temperature": 0.3,

@@ -45,6 +45,8 @@ def get_work_item(work_item_id):
             "Changed By": work_item_details["fields"].get("System.ChangedBy", {}).get("displayName", ""),
             "Changed Date": work_item_details["fields"]["System.ChangedDate"],
             "Acceptance Criteria": work_item_details["fields"].get("Microsoft.VSTS.Common.AcceptanceCriteria", ""),
+            "External Dependencies": work_item_details["fields"].get("Custom.ExternalDependencies", ""),
+            "Non Functional Requirements": work_item_details["fields"].get("Custom.NonFunctionalRequirements_MI", ""),
             "Story Points": work_item_details["fields"].get("Microsoft.VSTS.Scheduling.StoryPoints", 0),
             "Area Path": work_item_details["fields"]["System.AreaPath"],
             "Iteration Path": work_item_details["fields"]["System.IterationPath"],
@@ -170,6 +172,38 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
 
 def create_task(parent_work_item, task_data):
     return create_child_work_item(parent_work_item, task_data, "Task")
+
+def update_work_item(work_item_id, updates):
+    """
+    Updates a work item with the given fields.
+    updates: dict of field_name -> new_value
+    Example updates:
+    {
+        "System.Description": "New description...",
+        "Microsoft.VSTS.Common.AcceptanceCriteria": "New AC..."
+    }
+    """
+    url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/workitems/{work_item_id}?api-version=6.0"
+    
+    patch_document = []
+    for field, value in updates.items():
+        patch_document.append({
+            "op": "add", # "add" functions as replace/update if field exists
+            "path": f"/fields/{field}",
+            "value": value
+        })
+        
+    response = requests.patch(
+        url,
+        json=patch_document,
+        headers={"Content-Type": "application/json-patch+json"},
+        auth=HTTPBasicAuth("", pat_token)
+    )
+    
+    if response.status_code == 200:
+        return response.json()
+    else:
+        raise Exception(f"Failed to update work item {work_item_id}: {response.status_code} - {response.text}")
 
 if __name__ == "__main__":
     # Test the function
