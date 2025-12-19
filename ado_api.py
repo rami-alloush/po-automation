@@ -18,9 +18,9 @@ def get_env(name, required=True, default=None):
 # Required sensitive value
 pat_token = get_env("ADO_PAT_TOKEN")
 
-# Replace these variables with your own information
-organization = "spglobal"
-project = "Platts"
+# Configuration
+organization = get_env("ADO_ORGANIZATION", required=False, default="spglobal")
+project = get_env("ADO_PROJECT", required=False, default="Platts")
 
 
 # Define a custom exception for Authentication errors
@@ -252,12 +252,3 @@ def update_work_item(work_item_id, updates):
     )
 
     return check_response(response, f"update work item {work_item_id}")
-
-
-if __name__ == "__main__":
-    # Test the function
-    try:
-        wi = get_work_item("9950586")
-        print(json.dumps(wi, indent=2))
-    except Exception as e:
-        print(e)

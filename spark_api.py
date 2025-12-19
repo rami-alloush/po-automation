@@ -7,26 +7,31 @@ from dotenv import load_dotenv
 # Load environment variables from a .env file if present
 # load_dotenv() is now called inside get_spark_config
 
+
 def get_env(name, required=True, default=None):
     val = os.getenv(name, default)
     if required and (val is None or val == ""):
         raise RuntimeError(f"Missing required environment variable: {name}")
     return val
 
+
 def get_spark_config():
     load_dotenv(override=True)
-    
+
     api_key = get_env("SPARK_API_KEY")
-    env_url = get_env("SPARK_ENV_URL", required=False, default="https://sparkuatapi.spglobal.com")
+    env_url = get_env(
+        "SPARK_ENV_URL", required=False, default="https://sparkuatapi.spglobal.com"
+    )
     app_id = get_env("SPARK_APP_ID", required=False, default="sparkassist")
     model = get_env("SPARK_MODEL", required=False, default="gpt-4o-2024-11-20")
-    
+
     url = f"{env_url}/v1/{app_id}/openai/deployments/{model}/chat/completions?api_version=2024-10-21"
     return api_key, url
 
+
 def generate_tasks(user_story_content):
     api_key, url = get_spark_config()
-    
+
     # Prepare the payload
     payload = json.dumps(
         {
@@ -50,7 +55,7 @@ def generate_tasks(user_story_content):
     response = requests.request("POST", url, headers=headers, data=payload)
 
     if response.status_code != 200:
-         raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
+        raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
 
     # Parse the response as JSON
     response_json = response.json()
@@ -61,19 +66,20 @@ def generate_tasks(user_story_content):
     # Remove the code block formatting and parse the JSON
     try:
         # Find the first '{' and last '}' to extract JSON content
-        start_idx = response_content.find('{')
-        end_idx = response_content.rfind('}')
-        
+        start_idx = response_content.find("{")
+        end_idx = response_content.rfind("}")
+
         if start_idx != -1 and end_idx != -1:
-            cleaned_content = response_content[start_idx:end_idx+1]
+            cleaned_content = response_content[start_idx : end_idx + 1]
         else:
             cleaned_content = response_content.strip()
-            
+
         response_content_json = json.loads(cleaned_content)
         return response_content_json
     except json.JSONDecodeError:
         # Fallback if the response isn't perfect JSON
         raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
+
 
 def suggest_stories(feature, existing_stories):
     api_key, url = get_spark_config()
@@ -95,8 +101,8 @@ def suggest_stories(feature, existing_stories):
                     "content": "You are an expert Product Owner. Your task is to analyze a Feature and its existing User Stories, identify gaps in coverage, and suggest additional User Stories to fully achieve the Feature's objective. Return the suggested stories in a structured JSON format with the following structure: { 'stories': [ { 'Work Item Type': 'User Story', 'Title': <title>, 'Description': <description>, 'Acceptance Criteria': <acceptance_criteria>, 'Story Points': <estimated_points> } ] }. IMPORTANT: Output ONLY valid JSON.",
                 },
                 {
-                    "role": "user", 
-                    "content": f"Feature Title: {feature.get('Title')}\nFeature Description: {feature.get('Description')}\n\nExisting User Stories:\n{stories_text}\n\nPlease suggest additional User Stories needed to complete this Feature."
+                    "role": "user",
+                    "content": f"Feature Title: {feature.get('Title')}\nFeature Description: {feature.get('Description')}\n\nExisting User Stories:\n{stories_text}\n\nPlease suggest additional User Stories needed to complete this Feature.",
                 },
             ],
             "temperature": 0.3,
@@ -112,7 +118,7 @@ def suggest_stories(feature, existing_stories):
     response = requests.request("POST", url, headers=headers, data=payload)
 
     if response.status_code != 200:
-         raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
+        raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
 
     # Parse the response as JSON
     response_json = response.json()
@@ -123,19 +129,20 @@ def suggest_stories(feature, existing_stories):
     # Remove the code block formatting and parse the JSON
     try:
         # Find the first '{' and last '}' to extract JSON content
-        start_idx = response_content.find('{')
-        end_idx = response_content.rfind('}')
-        
+        start_idx = response_content.find("{")
+        end_idx = response_content.rfind("}")
+
         if start_idx != -1 and end_idx != -1:
-            cleaned_content = response_content[start_idx:end_idx+1]
+            cleaned_content = response_content[start_idx : end_idx + 1]
         else:
             cleaned_content = response_content.strip()
-            
+
         response_content_json = json.loads(cleaned_content)
         return response_content_json
     except json.JSONDecodeError:
         # Fallback if the response isn't perfect JSON
         raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
+
 
 def review_plan(feature, user_stories):
     api_key, url = get_spark_config()
@@ -144,7 +151,7 @@ def review_plan(feature, user_stories):
     stories_text = ""
     if user_stories:
         # Sort by Iteration Path to show current order
-        sorted_stories = sorted(user_stories, key=lambda x: x.get('Iteration Path', ''))
+        sorted_stories = sorted(user_stories, key=lambda x: x.get("Iteration Path", ""))
         for s in sorted_stories:
             stories_text += f"- ID: {s.get('ID')}, Title: {s.get('Title')}, Iteration: {s.get('Iteration Path')}\n"
     else:
@@ -160,7 +167,7 @@ def review_plan(feature, user_stories):
                 },
                 {
                     "role": "user",
-                    "content": f"Feature: {feature.get('Title')}\nDescription: {feature.get('Description')}\n\nCurrent Plan (User Stories):\n{stories_text}\n\nPlease review this plan."
+                    "content": f"Feature: {feature.get('Title')}\nDescription: {feature.get('Description')}\n\nCurrent Plan (User Stories):\n{stories_text}\n\nPlease review this plan.",
                 },
             ],
             "temperature": 0.3,
@@ -176,7 +183,7 @@ def review_plan(feature, user_stories):
     response = requests.request("POST", url, headers=headers, data=payload)
 
     if response.status_code != 200:
-         raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
+        raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
 
     # Parse the response as JSON
     response_json = response.json()
@@ -187,25 +194,27 @@ def review_plan(feature, user_stories):
     # Remove the code block formatting and parse the JSON
     try:
         # Find the first '{' and last '}' to extract JSON content
-        start_idx = response_content.find('{')
-        end_idx = response_content.rfind('}')
-        
+        start_idx = response_content.find("{")
+        end_idx = response_content.rfind("}")
+
         if start_idx != -1 and end_idx != -1:
-            cleaned_content = response_content[start_idx:end_idx+1]
+            cleaned_content = response_content[start_idx : end_idx + 1]
         else:
             cleaned_content = response_content.strip()
-            
+
         response_content_json = json.loads(cleaned_content)
         return response_content_json
     except json.JSONDecodeError:
         # Fallback if the response isn't perfect JSON
         raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
 
+
 def strip_html(text):
     if not text:
         return ""
-    clean = re.compile('<.*?>')
-    return re.sub(clean, '', text)
+    clean = re.compile("<.*?>")
+    return re.sub(clean, "", text)
+
 
 def generate_feature_details(feature, user_stories):
     api_key, url = get_spark_config()
@@ -214,8 +223,8 @@ def generate_feature_details(feature, user_stories):
     stories_text = ""
     if user_stories:
         for s in user_stories:
-            desc = strip_html(s.get('Description', ''))
-            ac = strip_html(s.get('Acceptance Criteria', ''))
+            desc = strip_html(s.get("Description", ""))
+            ac = strip_html(s.get("Acceptance Criteria", ""))
             stories_text += f"- ID: {s.get('ID')}, Title: {s.get('Title')}, Description: {desc}, AC: {ac}\n"
     else:
         stories_text = "No existing user stories found."
@@ -230,7 +239,7 @@ def generate_feature_details(feature, user_stories):
                 },
                 {
                     "role": "user",
-                    "content": f"Feature Title: {feature.get('Title')}\n\nUser Stories:\n{stories_text}\n\nGenerate the feature details based on these stories."
+                    "content": f"Feature Title: {feature.get('Title')}\n\nUser Stories:\n{stories_text}\n\nGenerate the feature details based on these stories.",
                 },
             ],
             "temperature": 0.3,
@@ -246,7 +255,7 @@ def generate_feature_details(feature, user_stories):
     response = requests.request("POST", url, headers=headers, data=payload)
 
     if response.status_code != 200:
-         raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
+        raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
 
     # Parse the response as JSON
     response_json = response.json()
@@ -257,31 +266,16 @@ def generate_feature_details(feature, user_stories):
     # Remove the code block formatting and parse the JSON
     try:
         # Find the first '{' and last '}' to extract JSON content
-        start_idx = response_content.find('{')
-        end_idx = response_content.rfind('}')
-        
+        start_idx = response_content.find("{")
+        end_idx = response_content.rfind("}")
+
         if start_idx != -1 and end_idx != -1:
-            cleaned_content = response_content[start_idx:end_idx+1]
+            cleaned_content = response_content[start_idx : end_idx + 1]
         else:
             cleaned_content = response_content.strip()
-            
+
         response_content_json = json.loads(cleaned_content)
         return response_content_json
     except json.JSONDecodeError:
         # Fallback if the response isn't perfect JSON
         raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
-
-if __name__ == "__main__":
-    # Test data
-    test_story = {
-        "id": 9950586,
-        "title": "Test Story",
-        "description": "Test Description",
-        "acceptance_criteria": "Test AC",
-        "story_points": 1
-    }
-    try:
-        tasks = generate_tasks(test_story)
-        print(json.dumps(tasks, indent=2))
-    except Exception as e:
-        print(e)

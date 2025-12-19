@@ -34,7 +34,7 @@ with tab1:
     col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
     with col1:
         t1_user_story_ids = st.text_input(
-            "Enter User Story IDs (comma separated)", value="9950586", key="t1_input"
+            "Enter User Story IDs (comma separated)", key="t1_input"
         )
     with col2:
         t1_fetch_btn = st.button("Fetch Stories", key="t1_fetch")
