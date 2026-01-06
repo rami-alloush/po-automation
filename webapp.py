@@ -12,8 +12,14 @@ st.title("ADO Automation Assistant")
 st.markdown("Automate your Azure DevOps workflows with AI.")
 
 # Tabs
-tab2, tab1, tab3, tab4 = st.tabs(
-    ["User Story Suggestion", "Task Generator", "Planning Revision", "Feature Details"]
+tab2, tab1, tab3, tab4, tab5 = st.tabs(
+    [
+        "User Story Suggestion",
+        "Task Generator",
+        "Planning Revision",
+        "Feature Details",
+        "Story Sorter",
+    ]
 )
 
 # --- Tab 1: Task Generator ---
@@ -685,6 +691,177 @@ with tab4:
                     else f"Updated {success_count} features!"
                 )
                 st.success(msg)
+
+# --- Tab 5: Story Sorter ---
+with tab5:
+    st.header("Story Sorter")
+    st.markdown("Fetch User Stories for a Feature and view them sorted alphabetically.")
+
+    if "t5_feature" not in st.session_state:
+        st.session_state.t5_feature = None
+    if "t5_stories" not in st.session_state:
+        st.session_state.t5_stories = []
+
+    # Step 1: Fetch
+    st.subheader("1. Fetch Feature")
+    col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
+    with col1:
+        t5_feature_id = st.text_input("Enter Feature ID", key="t5_input")
+    with col2:
+        t5_fetch_btn = st.button("Fetch Stories", key="t5_fetch")
+
+    if t5_fetch_btn and t5_feature_id:
+        try:
+            with st.spinner("Fetching Feature and Stories..."):
+                feature = ado_api.get_work_item(t5_feature_id)
+                st.session_state.t5_feature = feature
+
+                child_ids = []
+                if "Relations" in feature:
+                    for rel in feature["Relations"]:
+                        if rel["rel"] == "System.LinkTypes.Hierarchy-Forward":
+                            child_id = rel["url"].split("/")[-1]
+                            child_ids.append(child_id)
+
+                if child_ids:
+                    children = ado_api.get_work_items_batch(child_ids)
+                    st.session_state.t5_stories = [
+                        c
+                        for c in children
+                        if c["Work Item Type"] == "User Story"
+                        and c["State"] != "Removed"
+                    ]
+                else:
+                    st.session_state.t5_stories = []
+
+                st.session_state.t5_msg = f"Fetched: {feature['Title']} with {len(st.session_state.t5_stories)} stories."
+
+        except ado_api.ADOAuthenticationError as e:
+            st.error(str(e))
+        except Exception as e:
+            st.error(f"Error fetching feature: {e}")
+
+    # Persistent Display
+    if st.session_state.t5_feature:
+        st.markdown(f"**Feature: {st.session_state.t5_feature['Title']}**")
+        if "t5_msg" in st.session_state:
+            st.success(st.session_state.t5_msg)
+            del st.session_state["t5_msg"]
+
+    # Step 2: Display and Sort
+    if st.session_state.t5_stories:
+        st.subheader("2. Stories List")
+
+        sort_alpha = st.checkbox("Sort Alphabetically by Title", key="t5_sort")
+
+        if sort_alpha:
+            display_stories = sorted(
+                st.session_state.t5_stories, key=lambda x: x["Title"]
+            )
+        else:
+            display_stories = st.session_state.t5_stories
+
+        df = pd.DataFrame(display_stories)
+        cols_to_show = [
+            "ID",
+            "Title",
+            "State",
+            "Story Points",
+            "Stack Rank",
+            "Iteration Path",
+        ]
+        for c in cols_to_show:
+            if c not in df.columns:
+                df[c] = ""
+
+        st.dataframe(df[cols_to_show], use_container_width=True)
+
+        # Reorder in ADO
+        if sort_alpha:
+            st.subheader("3. Update ADO Order")
+            st.markdown(
+                "This will update the Backlog Priority/Stack Rank of the stories in ADO to match the alphabetical order shown above."
+            )
+            if st.button("Save Alphabetical Order to ADO", key="t5_reorder"):
+                with st.spinner("Updating Story Orders in ADO..."):
+                    try:
+                        # 1. Collect current ranks
+                        current_ranks = [
+                            s.get("Stack Rank", 0) for s in st.session_state.t5_stories
+                        ]
+                        # 2. Sort ranks to get available slots (low numbers = top)
+                        available_ranks = sorted(current_ranks)
+
+                        # 3. Handle duplicates/zeros in ranks
+                        # Ensure strictly increasing sequence to avoid collisions if possible
+                        refined_ranks = []
+                        if not available_ranks:
+                            # Fallback if no ranks found
+                            available_ranks = [
+                                i + 1 for i in range(len(st.session_state.t5_stories))
+                            ]
+
+                        start_rank = available_ranks[0]
+                        if start_rank <= 0:
+                            start_rank = 1
+
+                        # create a clean sequence starting from the lowest existing rank
+                        # or just use 1, 2, 3...
+                        # To be safe and preserve "neighborhood" in backlog, we use the min existing rank as base.
+                        # We use a step of 1 or larger.
+
+                        # Heuristic: Re-assign strictly increasing ranks based on sorted availability
+                        # If [100, 100, 200], we make it [100, 101, 200] roughly.
+
+                        base_rank = available_ranks[0] if available_ranks else 1
+                        if base_rank == 0:
+                            base_rank = 1
+
+                        # Generate new strictly increasing ranks
+                        # We won't strictly map to 'available_ranks' because duplicates break ordering.
+                        # We'll generate a sequence starting from min(available_ranks).
+                        # Assuming step of 1 is safe? Or prefer large gaps? ADO usually handles integers.
+
+                        final_ranks = [
+                            base_rank + i for i in range(len(display_stories))
+                        ]
+
+                        updates_count = 0
+                        errors = []
+
+                        for i, story in enumerate(display_stories):
+                            new_rank = final_ranks[i]
+                            rank_field = story.get(
+                                "Stack Rank Field", "Microsoft.VSTS.Common.StackRank"
+                            )
+
+                            # Only update if different?
+                            # Always update to enforce order.
+                            try:
+                                ado_api.update_work_item(
+                                    story["ID"], {rank_field: new_rank}
+                                )
+                                updates_count += 1
+                                # Update local state too
+                                story["Stack Rank"] = new_rank
+                            except Exception as e:
+                                errors.append(f"Failed to update {story['ID']}: {e}")
+
+                            time.sleep(0.1)  # throttling
+
+                        if errors:
+                            st.error(f"Completed with {len(errors)} errors.")
+                            for e in errors:
+                                st.write(e)
+                        else:
+                            st.success(
+                                f"Successfully reordered {updates_count} stories in ADO!"
+                            )
+                            # Refresh view
+                            st.rerun()
+
+                    except Exception as e:
+                        st.error(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
     # run streamlit command

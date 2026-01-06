@@ -35,7 +35,7 @@ def check_response(response, action_desc):
     elif response.status_code == 401:
         # Check specific content if needed, but 401 is generally Auth Error
         raise ADOAuthenticationError(
-            "Access Denied: Your Azure DevOps Personal Access Token (PAT) has expired or is invalid. "
+            "Access Denied2: Your Azure DevOps Personal Access Token (PAT) has expired or is invalid. "
             "Please update the ADO_PAT_TOKEN in your .env file."
         )
     else:
@@ -78,8 +78,20 @@ def get_work_item(work_item_id):
         "Non Functional Requirements": work_item_details["fields"].get(
             "Custom.NonFunctionalRequirements_MI", ""
         ),
+        "Get Story Points": work_item_details["fields"].get(
+            "Microsoft.VSTS.Scheduling.StoryPoints", 0
+        ),
         "Story Points": work_item_details["fields"].get(
             "Microsoft.VSTS.Scheduling.StoryPoints", 0
+        ),
+        "Stack Rank": work_item_details["fields"].get(
+            "Microsoft.VSTS.Common.StackRank",
+            work_item_details["fields"].get("Microsoft.VSTS.Common.BacklogPriority", 0),
+        ),
+        "Stack Rank Field": (
+            "Microsoft.VSTS.Common.StackRank"
+            if "Microsoft.VSTS.Common.StackRank" in work_item_details["fields"]
+            else "Microsoft.VSTS.Common.BacklogPriority"
         ),
         "Area Path": work_item_details["fields"]["System.AreaPath"],
         "Iteration Path": work_item_details["fields"]["System.IterationPath"],
@@ -114,6 +126,17 @@ def get_work_items_batch(ids):
                 "State": work_item_details["fields"]["System.State"],
                 "Story Points": work_item_details["fields"].get(
                     "Microsoft.VSTS.Scheduling.StoryPoints", 0
+                ),
+                "Stack Rank": work_item_details["fields"].get(
+                    "Microsoft.VSTS.Common.StackRank",
+                    work_item_details["fields"].get(
+                        "Microsoft.VSTS.Common.BacklogPriority", 0
+                    ),
+                ),
+                "Stack Rank Field": (
+                    "Microsoft.VSTS.Common.StackRank"
+                    if "Microsoft.VSTS.Common.StackRank" in work_item_details["fields"]
+                    else "Microsoft.VSTS.Common.BacklogPriority"
                 ),
                 "Acceptance Criteria": work_item_details["fields"].get(
                     "Microsoft.VSTS.Common.AcceptanceCriteria", ""
