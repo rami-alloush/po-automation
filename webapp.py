@@ -127,11 +127,11 @@ with tab1:
 
                 # Unique key for each editor
                 editor_key = f"t1_editor_{story['ID']}"
-                edited_df = st.data_editor(
+                t1_edited_df = st.data_editor(
                     df, num_rows="dynamic", width="stretch", key=editor_key
                 )
 
-                t1_final_tasks_map[story["ID"]] = edited_df.to_dict(orient="records")
+                t1_final_tasks_map[story["ID"]] = t1_edited_df.to_dict(orient="records")
 
         # Step 4: Upload to ADO
         st.subheader("4. Upload to ADO")
@@ -413,7 +413,7 @@ with tab3:
                 if c not in df_plan.columns:
                     df_plan[c] = ""
 
-            st.dataframe(df_plan[cols_to_show], use_container_width=True)
+            st.dataframe(df_plan[cols_to_show], width="stretch")
         else:
             st.info("No user stories found for this feature.")
             # Debug info
@@ -695,7 +695,7 @@ with tab4:
 # --- Tab 5: Story Sorter ---
 with tab5:
     st.header("Story Sorter")
-    st.markdown("Fetch User Stories for a Feature and view them sorted alphabetically.")
+    st.markdown("Fetch User Stories for a Feature and view them sorted.")
 
     if "t5_feature" not in st.session_state:
         st.session_state.t5_feature = None
@@ -747,19 +747,31 @@ with tab5:
         if "t5_msg" in st.session_state:
             st.success(st.session_state.t5_msg)
             del st.session_state["t5_msg"]
+        if "t5_success" in st.session_state:
+            st.success(st.session_state.t5_success)
+            del st.session_state["t5_success"]
 
     # Step 2: Display and Sort
     if st.session_state.t5_stories:
         st.subheader("2. Stories List")
 
-        sort_alpha = st.checkbox("Sort Alphabetically by Title", key="t5_sort")
+        sort_criteria = st.radio(
+            "Sort by:",
+            ["Default", "Title (A-Z)", "Iteration Path"],
+            horizontal=True,
+            key="t5_sort",
+        )
 
-        if sort_alpha:
+        display_stories = st.session_state.t5_stories
+        if sort_criteria == "Title (A-Z)":
             display_stories = sorted(
                 st.session_state.t5_stories, key=lambda x: x["Title"]
             )
-        else:
-            display_stories = st.session_state.t5_stories
+        elif sort_criteria == "Iteration Path":
+            display_stories = sorted(
+                st.session_state.t5_stories,
+                key=lambda x: (x.get("Iteration Path", ""), x["Title"]),
+            )
 
         df = pd.DataFrame(display_stories)
         cols_to_show = [
@@ -774,15 +786,15 @@ with tab5:
             if c not in df.columns:
                 df[c] = ""
 
-        st.dataframe(df[cols_to_show], use_container_width=True)
+        st.dataframe(df[cols_to_show], width="stretch")
 
         # Reorder in ADO
-        if sort_alpha:
+        if sort_criteria != "Default":
             st.subheader("3. Update ADO Order")
             st.markdown(
-                "This will update the Backlog Priority/Stack Rank of the stories in ADO to match the alphabetical order shown above."
+                f"This will update the Backlog Priority/Stack Rank of the stories in ADO to match the **{sort_criteria}** order shown above."
             )
-            if st.button("Save Alphabetical Order to ADO", key="t5_reorder"):
+            if st.button("Save Sorted Order to ADO", key="t5_reorder"):
                 with st.spinner("Updating Story Orders in ADO..."):
                     try:
                         # 1. Collect current ranks
@@ -792,11 +804,8 @@ with tab5:
                         # 2. Sort ranks to get available slots (low numbers = top)
                         available_ranks = sorted(current_ranks)
 
-                        # 3. Handle duplicates/zeros in ranks
-                        # Ensure strictly increasing sequence to avoid collisions if possible
-                        refined_ranks = []
+                        # 3. Handle duplicates/zeros
                         if not available_ranks:
-                            # Fallback if no ranks found
                             available_ranks = [
                                 i + 1 for i in range(len(st.session_state.t5_stories))
                             ]
@@ -805,22 +814,9 @@ with tab5:
                         if start_rank <= 0:
                             start_rank = 1
 
-                        # create a clean sequence starting from the lowest existing rank
-                        # or just use 1, 2, 3...
-                        # To be safe and preserve "neighborhood" in backlog, we use the min existing rank as base.
-                        # We use a step of 1 or larger.
-
-                        # Heuristic: Re-assign strictly increasing ranks based on sorted availability
-                        # If [100, 100, 200], we make it [100, 101, 200] roughly.
-
                         base_rank = available_ranks[0] if available_ranks else 1
                         if base_rank == 0:
                             base_rank = 1
-
-                        # Generate new strictly increasing ranks
-                        # We won't strictly map to 'available_ranks' because duplicates break ordering.
-                        # We'll generate a sequence starting from min(available_ranks).
-                        # Assuming step of 1 is safe? Or prefer large gaps? ADO usually handles integers.
 
                         final_ranks = [
                             base_rank + i for i in range(len(display_stories))
@@ -835,8 +831,6 @@ with tab5:
                                 "Stack Rank Field", "Microsoft.VSTS.Common.StackRank"
                             )
 
-                            # Only update if different?
-                            # Always update to enforce order.
                             try:
                                 ado_api.update_work_item(
                                     story["ID"], {rank_field: new_rank}
@@ -854,10 +848,7 @@ with tab5:
                             for e in errors:
                                 st.write(e)
                         else:
-                            st.success(
-                                f"Successfully reordered {updates_count} stories in ADO!"
-                            )
-                            # Refresh view
+                            st.session_state.t5_success = f"Successfully reordered {updates_count} stories in ADO based on {sort_criteria}!"
                             st.rerun()
 
                     except Exception as e:
