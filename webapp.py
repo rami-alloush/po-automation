@@ -694,8 +694,8 @@ with tab4:
 
 # --- Tab 5: Story Sorter ---
 with tab5:
-    st.header("Story Sorter")
-    st.markdown("Fetch User Stories for a Feature and view them sorted.")
+    st.header("Item Sorter (Stories & Bugs)")
+    st.markdown("Fetch User Stories and Bugs for a Feature and view them sorted.")
 
     if "t5_feature" not in st.session_state:
         st.session_state.t5_feature = None
@@ -728,13 +728,13 @@ with tab5:
                     st.session_state.t5_stories = [
                         c
                         for c in children
-                        if c["Work Item Type"] == "User Story"
+                        if c["Work Item Type"] in ["User Story", "Bug"]
                         and c["State"] != "Removed"
                     ]
                 else:
                     st.session_state.t5_stories = []
 
-                st.session_state.t5_msg = f"Fetched: {feature['Title']} with {len(st.session_state.t5_stories)} stories."
+                st.session_state.t5_msg = f"Fetched: {feature['Title']} with {len(st.session_state.t5_stories)} items."
 
         except ado_api.ADOAuthenticationError as e:
             st.error(str(e))
@@ -753,7 +753,7 @@ with tab5:
 
     # Step 2: Display and Sort
     if st.session_state.t5_stories:
-        st.subheader("2. Stories List")
+        st.subheader("2. Items List")
 
         sort_criteria = st.radio(
             "Sort by:",
@@ -776,6 +776,7 @@ with tab5:
         df = pd.DataFrame(display_stories)
         cols_to_show = [
             "ID",
+            "Work Item Type",
             "Title",
             "State",
             "Story Points",
