@@ -154,6 +154,34 @@ def get_work_items_batch(ids):
     return items
 
 
+def execute_query(query_id):
+    """
+    Executes a stored query by ID and returns a list of Work Item IDs.
+    """
+    url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/wiql/{query_id}?api-version=6.0"
+    response = requests.get(url, auth=HTTPBasicAuth("", pat_token))
+
+    data = check_response(response, "execute query")
+
+    ids = []
+    if "workItems" in data:
+        # Flat query
+        ids = [item["id"] for item in data["workItems"]]
+    elif "workItemRelations" in data:
+        # Tree query - extract targets (usually the items we want)
+        # or sources depending on what the user wants.
+        # For a general "list of stories", we might just take all unique IDs found.
+        ids = set()
+        for rel in data["workItemRelations"]:
+            if rel.get("target"):
+                ids.add(rel["target"]["id"])
+            if rel.get("source"):
+                ids.add(rel["source"]["id"])
+        ids = list(ids)
+
+    return ids
+
+
 def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
     # work_item_type should be 'Task' or 'User Story' etc.
     # The API expects $Task or $User%20Story

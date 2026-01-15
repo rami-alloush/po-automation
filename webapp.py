@@ -5,6 +5,7 @@ import ado_api
 import spark_api
 import json
 import time
+import urllib.parse
 
 st.set_page_config(page_title="ADO Automation", layout="wide")
 
@@ -40,7 +41,7 @@ with tab1:
     col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
     with col1:
         t1_user_story_ids = st.text_input(
-            "Enter User Story IDs (comma separated)", key="t1_input"
+            "Enter User Story IDs (comma separated) or Query URL", key="t1_input"
         )
     with col2:
         t1_fetch_btn = st.button("Fetch Stories", key="t1_fetch")
@@ -48,8 +49,59 @@ with tab1:
     if t1_fetch_btn and t1_user_story_ids:
         try:
             with st.spinner("Fetching User Stories..."):
-                # Split and clean IDs
-                ids = [x.strip() for x in t1_user_story_ids.split(",") if x.strip()]
+                input_val = t1_user_story_ids.strip()
+                ids = []
+
+                # Logic to determine if input is a URL, Query ID, or list of Story IDs
+                if input_val.lower().startswith("http"):
+                    # Process as ADO Query URL
+                    parsed = urllib.parse.urlparse(input_val)
+                    qs = urllib.parse.parse_qs(parsed.query)
+
+                    query_id = None
+                    if "tempQueryId" in qs:
+                        query_id = qs["tempQueryId"][0]
+                    else:
+                        # Try to find GUID in path: .../_queries/query/{GUID}
+                        parts = parsed.path.rstrip("/").split("/")
+                        if "query" in parts:
+                            try:
+                                idx = parts.index("query")
+                                if idx + 1 < len(parts):
+                                    query_id = parts[idx + 1]
+                            except ValueError:
+                                pass
+
+                    if query_id:
+                        st.info(f"Executing Query: {query_id}")
+                        try:
+                            ids = ado_api.execute_query(query_id)
+                            if not ids:
+                                st.warning(
+                                    "Query executed successfully but returned no results."
+                                )
+                        except Exception as e:
+                            if "tempQueryId" in qs:
+                                st.error(
+                                    f"Failed to execute temporary query. Please **Save** the query in Azure DevOps to generate a permanent link, then try again.\n\nError details: {e}"
+                                )
+                            else:
+                                raise e  # Re-raise to be caught by outer handler
+                    else:
+                        st.error("Could not extract Query ID from the provided URL.")
+
+                elif (
+                    "-" in input_val
+                    and len(input_val) > 30
+                    and any(c.isalpha() for c in input_val)
+                ):
+                    # Assume it is a raw Query GUID
+                    st.info(f"Executing Query ID: {input_val}")
+                    ids = ado_api.execute_query(input_val)
+                else:
+                    # Assume comma-separated User Story IDs
+                    ids = [x.strip() for x in input_val.split(",") if x.strip()]
+
                 if ids:
                     stories = ado_api.get_work_items_batch(ids)
                     st.session_state.t1_user_stories = stories
@@ -66,7 +118,10 @@ with tab1:
     if st.session_state.t1_user_stories:
         st.markdown("### Fetched Stories")
         for story in st.session_state.t1_user_stories:
-            with st.expander(f"{story['ID']}: {story['Title']}", expanded=False):
+            with st.expander(
+                f"{story['ID']} ({story['Work Item Type']}): {story['Title']}",
+                expanded=False,
+            ):
                 st.markdown(f"**Description:**")
                 st.markdown(story["Description"], unsafe_allow_html=True)
                 st.markdown(f"**Acceptance Criteria:**")
