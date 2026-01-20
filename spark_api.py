@@ -102,7 +102,7 @@ def suggest_stories(feature, existing_stories):
                 },
                 {
                     "role": "user",
-                    "content": f"Feature Title: {feature.get('Title')}\nFeature Description: {feature.get('Description')}\n\nExisting User Stories:\n{stories_text}\n\nPlease suggest additional User Stories needed to complete this Feature.",
+                    "content": f"Feature ID: {feature.get('ID')}\nFeature Title: {feature.get('Title')}\nFeature Description: {feature.get('Description')}\nAssigned To: {feature.get('Assigned To')}\nState: {feature.get('State')}\nAcceptance Criteria: {feature.get('Acceptance Criteria')}\nExternal Dependencies: {feature.get('External Dependencies')}\nNon Functional Requirements: {feature.get('Non Functional Requirements')}\nArea Path: {feature.get('Area Path')}\nIteration Path: {feature.get('Iteration Path')}\nTags: {feature.get('Tags')}\n\nExisting User Stories:\n{stories_text}\n\nPlease suggest additional User Stories needed to complete this Feature.",
                 },
             ],
             "temperature": 0.3,
