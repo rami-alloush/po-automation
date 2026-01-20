@@ -13,13 +13,14 @@ st.title("ADO Automation Assistant")
 st.markdown("Automate your Azure DevOps workflows with AI.")
 
 # Tabs
-tab2, tab1, tab3, tab4, tab5 = st.tabs(
+tab2, tab1, tab3, tab4, tab5, tab6 = st.tabs(
     [
         "User Story Suggestion",
         "Task Generator",
         "Planning Revision",
         "Feature Details",
         "Story Sorter",
+        "Bulk Create",
     ]
 )
 
@@ -909,6 +910,174 @@ with tab5:
 
                     except Exception as e:
                         st.error(f"An unexpected error occurred: {e}")
+
+# --- Tab 6: Bulk Create (Chat) ---
+with tab6:
+    st.header("Bulk Create via Chat")
+    st.markdown("Chat to define user stories, then extract and create them in bulk.")
+
+    # Session State
+    if "t6_messages" not in st.session_state:
+        st.session_state.t6_messages = []
+    if "t6_extracted_stories" not in st.session_state:
+        st.session_state.t6_extracted_stories = []
+
+    # Chat Interface
+    st.subheader("1. Chat")
+
+    # Display chat messages with history collapse
+    messages = st.session_state.t6_messages
+    if len(messages) > 2:
+        with st.expander("Previous Chat History", expanded=False):
+            for msg in messages[:-2]:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+        # Display the most recent exchange (User + Assistant usually)
+        for msg in messages[-2:]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+    else:
+        # Display all if short history
+        for msg in messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+    # Chat input
+    if prompt := st.chat_input("Describe the user stories you want to create..."):
+        # Add user message
+        st.session_state.t6_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Get response
+        with st.chat_message("assistant"):
+            # Create a placeholder to show immediate feedback
+            message_placeholder = st.empty()
+            message_placeholder.markdown("🔄 *Thinking...*")
+
+            try:
+                with st.spinner("Generating response..."):
+                    response_text = spark_api.chat_completion(
+                        st.session_state.t6_messages
+                    )
+
+                # Update placeholder with final content
+                message_placeholder.markdown(response_text)
+
+                # Save to history
+                st.session_state.t6_messages.append(
+                    {"role": "assistant", "content": response_text}
+                )
+            except Exception as e:
+                message_placeholder.error(f"Error: {e}")
+
+    # Extract Stories
+    st.subheader("2. Extract & Configuration")
+
+    if st.button("Extract Stories from Chat", key="t6_extract"):
+        if not st.session_state.t6_messages:
+            st.warning("No chat history to analyze.")
+        else:
+            with st.spinner("Analyzing chat history..."):
+                try:
+                    result = spark_api.extract_stories_from_chat(
+                        st.session_state.t6_messages
+                    )
+                    if "stories" in result:
+                        st.session_state.t6_extracted_stories = result["stories"]
+                        st.success(f"Extracted {len(result['stories'])} stories.")
+                    else:
+                        st.warning("No stories found in the response.")
+                except Exception as e:
+                    st.error(f"Error extracting stories: {e}")
+
+    # Configuration Inputs
+    col1, col2 = st.columns(2)
+    with col1:
+        t6_parent_id = st.text_input("Parent Feature ID (Required)", key="t6_parent_id")
+    with col2:
+        t6_iteration = st.text_input(
+            "Iteration Path (Leave empty to use Parent's)", key="t6_iteration"
+        )
+
+    # Review and Create
+    if st.session_state.t6_extracted_stories:
+        st.subheader("3. Review and Create")
+
+        df_t6 = pd.DataFrame(st.session_state.t6_extracted_stories)
+
+        # Ensure columns exist
+        cols = ["Title", "Description", "Acceptance Criteria", "Story Points"]
+        for c in cols:
+            if c not in df_t6.columns:
+                df_t6[c] = ""
+
+        # Reorder columns
+        df_t6 = df_t6[cols + [c for c in df_t6.columns if c not in cols]]
+
+        t6_edited_df = st.data_editor(
+            df_t6, num_rows="dynamic", width="stretch", key="t6_editor"
+        )
+
+        t6_dry_run = st.checkbox("Dry Run", value=True, key="t6_dry")
+
+        if st.button("Create Stories in ADO", key="t6_create"):
+            stories_to_create = t6_edited_df.to_dict(orient="records")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            success_count = 0
+            errors = []
+
+            # Get Parent Details if ID provided
+            parent_item = None
+            if t6_parent_id:
+                try:
+                    parent_item = ado_api.get_work_item(t6_parent_id)
+                except Exception as e:
+                    st.error(f"Invalid Parent Feature ID: {e}")
+                    stories_to_create = []  # Skip loop
+
+            if not parent_item and stories_to_create:
+                st.error("Parent Feature ID is required to create stories.")
+                stories_to_create = []
+
+            total = len(stories_to_create)
+            for i, story_data in enumerate(stories_to_create):
+                status_text.text(f"Processing: {story_data.get('Title', 'Unknown')}")
+
+                # Configure Parent Object with correct Iteration
+                effective_parent = parent_item.copy()
+                if t6_iteration.strip():
+                    effective_parent["Iteration Path"] = t6_iteration.strip()
+
+                try:
+                    if not t6_dry_run:
+                        ado_api.create_child_work_item(
+                            effective_parent, story_data, "User Story"
+                        )
+                    else:
+                        time.sleep(0.5)
+                    success_count += 1
+                except Exception as e:
+                    errors.append(f"Failed {story_data.get('Title')}: {e}")
+
+                if total > 0:
+                    progress_bar.progress((i + 1) / total)
+
+            if errors:
+                st.error(f"Completed with {len(errors)} errors.")
+                for e in errors:
+                    st.write(e)
+            else:
+                if total > 0:
+                    msg = (
+                        f"Dry run: {success_count} stories would be created."
+                        if t6_dry_run
+                        else f"Created {success_count} stories!"
+                    )
+                    st.success(msg)
+
 
 if __name__ == "__main__":
     # run streamlit command

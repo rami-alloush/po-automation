@@ -190,11 +190,15 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
 
     # Construct the JSON Patch document
     patch_document = [
-        {"op": "add", "path": "/fields/System.Title", "value": item_data.get("Title")},
+        {
+            "op": "add",
+            "path": "/fields/System.Title",
+            "value": item_data.get("Title") or "",
+        },
         {
             "op": "add",
             "path": "/fields/System.Description",
-            "value": item_data.get("Description"),
+            "value": item_data.get("Description") or "",
         },
         {
             "op": "add",
@@ -234,11 +238,18 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
         )
     elif work_item_type == "User Story":
         if "Acceptance Criteria" in item_data:
+            ac_value = item_data.get("Acceptance Criteria") or ""
+            # Safety check: if AC is a list, convert to HTML list string
+            if isinstance(ac_value, list):
+                ac_value = (
+                    "<ul>" + "".join([f"<li>{x}</li>" for x in ac_value]) + "</ul>"
+                )
+
             patch_document.append(
                 {
                     "op": "add",
                     "path": "/fields/Microsoft.VSTS.Common.AcceptanceCriteria",
-                    "value": item_data.get("Acceptance Criteria"),
+                    "value": ac_value,
                 }
             )
         if "Story Points" in item_data:

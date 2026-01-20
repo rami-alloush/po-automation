@@ -279,3 +279,90 @@ def generate_feature_details(feature, user_stories):
     except json.JSONDecodeError:
         # Fallback if the response isn't perfect JSON
         raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
+
+
+def chat_completion(messages):
+    api_key, url = get_spark_config()
+
+    # Prepend system message if not present or just ensure it exists in the stream
+    # The caller manages the full history
+    payload = json.dumps(
+        {
+            "messages": messages,
+            "temperature": 0.5,
+            "n": 1,
+            "stream": "False",
+            "presence_penalty": 0,
+            "frequency_penalty": 0,
+            "top_p": 1,
+        }
+    )
+
+    headers = {"api-key": f"{api_key}", "Content-Type": "application/json"}
+    response = requests.request("POST", url, headers=headers, data=payload)
+
+    if response.status_code != 200:
+        raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
+
+    response_json = response.json()
+    return response_json["choices"][0]["message"]["content"]
+
+
+def extract_stories_from_chat(chat_history):
+    api_key, url = get_spark_config()
+
+    # Convert chat history to a single text block for context
+    conversation_text = ""
+    for msg in chat_history:
+        role = msg.get("role", "unknown")
+        content = msg.get("content", "")
+        conversation_text += f"{role.upper()}: {content}\n\n"
+
+    payload = json.dumps(
+        {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert Product Owner. Your task is to extract structured User Stories from a conversation history. "
+                    "Based on the discussion, identify the user stories that have been defined or agreed upon. "
+                    "Return them in a valid JSON format with the following structure: "
+                    "{ 'stories': [ { 'Work Item Type': 'User Story', 'Title': <title>, 'Description': <description>, 'Acceptance Criteria': <acceptance_criteria_as_html_ul_li_string>, 'Story Points': <estimated_points> } ] }. "
+                    "Ensure 'Acceptance Criteria' is a single string containing HTML list elements (<ul><li>...</li></ul>), NOT a JSON list. "
+                    "If no clear stories are defined, return { 'stories': [] }. IMPORTANT: Output ONLY valid JSON.",
+                },
+                {
+                    "role": "user",
+                    "content": f"Here is the conversation history:\n\n{conversation_text}\n\nPlease extract the User Stories discussing in this conversation.",
+                },
+            ],
+            "temperature": 0.2,
+            "n": 1,
+            "stream": "False",
+            "presence_penalty": 0,
+            "frequency_penalty": 0,
+            "top_p": 1,
+        }
+    )
+
+    headers = {"api-key": f"{api_key}", "Content-Type": "application/json"}
+    response = requests.request("POST", url, headers=headers, data=payload)
+
+    if response.status_code != 200:
+        raise Exception(f"Spark API Error: {response.status_code} - {response.text}")
+
+    response_json = response.json()
+    response_content = response_json["choices"][0]["message"]["content"]
+
+    try:
+        start_idx = response_content.find("{")
+        end_idx = response_content.rfind("}")
+
+        if start_idx != -1 and end_idx != -1:
+            cleaned_content = response_content[start_idx : end_idx + 1]
+        else:
+            cleaned_content = response_content.strip()
+
+        response_content_json = json.loads(cleaned_content)
+        return response_content_json
+    except json.JSONDecodeError:
+        raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
