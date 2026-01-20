@@ -459,7 +459,10 @@ with tab3:
             st.markdown("**Current Plan (Ordered by Iteration):**")
             # Sort by Iteration Path
             sorted_stories = sorted(
-                st.session_state.t3_stories, key=lambda x: x.get("Iteration Path", "")
+                st.session_state.t3_stories,
+                key=lambda x: x.get("Iteration Path", "").replace(
+                    "IP Iteration", "~IP Iteration"
+                ),
             )
 
             df_plan = pd.DataFrame(sorted_stories)
@@ -826,7 +829,12 @@ with tab5:
         elif sort_criteria == "Iteration Path":
             display_stories = sorted(
                 st.session_state.t5_stories,
-                key=lambda x: (x.get("Iteration Path", ""), x["Title"]),
+                key=lambda x: (
+                    x.get("Iteration Path", "").replace(
+                        "IP Iteration", "~IP Iteration"
+                    ),
+                    x["Title"],
+                ),
             )
 
         df = pd.DataFrame(display_stories)
