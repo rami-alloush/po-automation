@@ -130,6 +130,9 @@ def get_work_items_batch(ids):
                     "System.Description", ""
                 ),
                 "Title": work_item_details["fields"]["System.Title"],
+                "Assigned To": work_item_details["fields"]
+                .get("System.AssignedTo", {})
+                .get("displayName", "Unassigned"),
                 "State": work_item_details["fields"]["System.State"],
                 "Story Points": work_item_details["fields"].get(
                     "Microsoft.VSTS.Scheduling.StoryPoints", 0
@@ -248,6 +251,14 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
                 "value": item_data.get("Original Estimate"),
             }
         )
+        if "Remaining Work" in item_data:
+            patch_document.append(
+                {
+                    "op": "add",
+                    "path": "/fields/Microsoft.VSTS.Scheduling.RemainingWork",
+                    "value": item_data.get("Remaining Work"),
+                }
+            )
         patch_document.append(
             {
                 "op": "add",

@@ -142,9 +142,19 @@ with tab1:
                 try:
                     tasks_response = spark_api.generate_tasks(story)
                     if "tasks" in tasks_response:
-                        st.session_state.t1_generated_tasks_map[story["ID"]] = (
-                            tasks_response["tasks"]
-                        )
+                        tasks = tasks_response["tasks"]
+                        # Auto-assign story owner and set Remaining Work
+                        story_assignee = story.get("Assigned To", "")
+                        if story_assignee == "Unassigned":
+                            story_assignee = ""
+
+                        for t in tasks:
+                            if story_assignee:
+                                t["Assigned To"] = story_assignee
+                            # Set Remaining Work = Original Estimate
+                            t["Remaining Work"] = t.get("Original Estimate", 0)
+
+                        st.session_state.t1_generated_tasks_map[story["ID"]] = tasks
                     else:
                         st.error(f"Unexpected response format for story {story['ID']}.")
                 except Exception as e:
@@ -170,6 +180,7 @@ with tab1:
                     "Title",
                     "Description",
                     "Original Estimate",
+                    "Remaining Work",
                     "Assigned To",
                     "Activity",
                 ]
