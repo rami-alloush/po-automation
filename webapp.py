@@ -354,10 +354,21 @@ with tab2:
             "Acceptance Criteria",
             "Story Points",
             "Assigned To",
+            "CMDB App Name",
         ]
         for col in req_cols_stories:
             if col not in df_stories.columns:
-                df_stories[col] = ""
+                if col == "CMDB App Name":
+                    val = (
+                        st.session_state.t2_feature.get("CMDB App Name", "")
+                        if st.session_state.t2_feature
+                        else ""
+                    )
+                    if not val:
+                        val = "CI UDM - UNIFIED DATA MODEL NA"
+                    df_stories[col] = val
+                else:
+                    df_stories[col] = ""
 
         df_stories = df_stories[
             req_cols_stories
@@ -1028,10 +1039,19 @@ with tab6:
         df_t6 = pd.DataFrame(st.session_state.t6_extracted_stories)
 
         # Ensure columns exist
-        cols = ["Title", "Description", "Acceptance Criteria", "Story Points"]
+        cols = [
+            "Title",
+            "Description",
+            "Acceptance Criteria",
+            "Story Points",
+            "CMDB App Name",
+        ]
         for c in cols:
             if c not in df_t6.columns:
-                df_t6[c] = ""
+                if c == "CMDB App Name":
+                    df_t6[c] = "CI UDM - UNIFIED DATA MODEL NA"
+                else:
+                    df_t6[c] = ""
 
         # Reorder columns
         df_t6 = df_t6[cols + [c for c in df_t6.columns if c not in cols]]

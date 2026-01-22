@@ -300,12 +300,17 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
             }
         )
 
-    if "CMDB App Name" in item_data and item_data["CMDB App Name"]:
+    # Handle CMDB App Name (inherit from parent if not provided)
+    cmdb_val = item_data.get("CMDB App Name")
+    if not cmdb_val and parent_work_item:
+        cmdb_val = parent_work_item.get("CMDB App Name")
+
+    if cmdb_val:
         patch_document.append(
             {
                 "op": "add",
                 "path": "/fields/Custom.CMDBAppName",
-                "value": item_data["CMDB App Name"],
+                "value": cmdb_val,
             }
         )
 
