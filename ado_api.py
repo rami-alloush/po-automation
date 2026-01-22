@@ -98,6 +98,13 @@ def get_work_item(work_item_id):
         "url": work_item_details["url"],
         "Web URL": work_item_details.get("_links", {}).get("html", {}).get("href", ""),
         "Relations": work_item_details.get("relations", []),
+        "Original Estimate": work_item_details["fields"].get(
+            "Microsoft.VSTS.Scheduling.OriginalEstimate", 0
+        ),
+        "Activity": work_item_details["fields"].get(
+            "Microsoft.VSTS.Common.Activity", "Development"
+        ),
+        "CMDB App Name": work_item_details["fields"].get("Custom.CMDBAppName", ""),
     }
     return work_item
 
@@ -149,6 +156,12 @@ def get_work_items_batch(ids):
                 "Web URL": work_item_details.get("_links", {})
                 .get("html", {})
                 .get("href", ""),
+                "Original Estimate": work_item_details["fields"].get(
+                    "Microsoft.VSTS.Scheduling.OriginalEstimate", 0
+                ),
+                "Activity": work_item_details["fields"].get(
+                    "Microsoft.VSTS.Common.Activity", "Development"
+                ),
             }
         )
     return items
@@ -203,22 +216,28 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
         {
             "op": "add",
             "path": "/fields/System.AreaPath",
-            "value": parent_work_item["Area Path"],
+            "value": item_data.get("Area Path") or parent_work_item["Area Path"],
         },
         {
             "op": "add",
             "path": "/fields/System.IterationPath",
-            "value": parent_work_item["Iteration Path"],
-        },
-        {
-            "op": "add",
-            "path": "/relations/-",
-            "value": {
-                "rel": "System.LinkTypes.Hierarchy-Reverse",
-                "url": parent_work_item["url"],
-            },
+            "value": item_data.get("Iteration Path")
+            or parent_work_item["Iteration Path"],
         },
     ]
+
+    # Only add parent relation if parent_work_item is provided and has a URL
+    if parent_work_item and "url" in parent_work_item:
+        patch_document.append(
+            {
+                "op": "add",
+                "path": "/relations/-",
+                "value": {
+                    "rel": "System.LinkTypes.Hierarchy-Reverse",
+                    "url": parent_work_item["url"],
+                },
+            }
+        )
 
     # Add type-specific fields
     if work_item_type == "Task":
@@ -270,6 +289,15 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
             }
         )
 
+    if "CMDB App Name" in item_data and item_data["CMDB App Name"]:
+        patch_document.append(
+            {
+                "op": "add",
+                "path": "/fields/Custom.CMDBAppName",
+                "value": item_data["CMDB App Name"],
+            }
+        )
+
     response = requests.post(
         url,
         json=patch_document,
@@ -314,3 +342,36 @@ def update_work_item(work_item_id, updates):
     )
 
     return check_response(response, f"update work item {work_item_id}")
+
+
+def get_iterations_by_path(path_str):
+    """
+    Fetches children iterations for a given path string (e.g. "Platts\\Scrum\\26.02")
+    Returns a list of iteration node objects with keys: Name, Path, ID.
+    """
+    # Remove project name from path if present at start (Classification Nodes API expects path relative to project)
+    normalized_path = path_str.replace("\\", "/")
+    if normalized_path.startswith(f"{project}/"):
+        relative_path = normalized_path[len(project) + 1 :]
+    else:
+        relative_path = normalized_path
+
+    url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/classificationnodes/Iterations/{relative_path}?$depth=1&api-version=6.0"
+
+    response = requests.get(url, auth=HTTPBasicAuth("", pat_token))
+
+    if response.status_code == 404:
+        return []
+
+    data = check_response(response, "fetch iterations")
+
+    children = []
+    if "children" in data:
+        for child in data["children"]:
+            # Construct the absolute path for 'System.IterationPath'
+            full_path = f"{path_str}\\{child['name']}"
+            children.append(
+                {"Name": child["name"], "Path": full_path, "ID": child["id"]}
+            )
+
+    return children

@@ -13,7 +13,7 @@ st.title("ADO Automation Assistant")
 st.markdown("Automate your Azure DevOps workflows with AI.")
 
 # Tabs
-tab2, tab1, tab3, tab4, tab5, tab6 = st.tabs(
+tab2, tab1, tab3, tab4, tab5, tab6, tab7 = st.tabs(
     [
         "User Story Suggestion",
         "Task Generator",
@@ -21,6 +21,7 @@ tab2, tab1, tab3, tab4, tab5, tab6 = st.tabs(
         "Feature Details",
         "Story Sorter",
         "Bulk Create",
+        "Story Replicator",
     ]
 )
 
@@ -1085,6 +1086,230 @@ with tab6:
                         else f"Created {success_count} stories!"
                     )
                     st.success(msg)
+
+
+# --- Tab 7: Story Replicator ---
+with tab7:
+    st.header("Story Replicator")
+    st.markdown("Duplicate a User Story and its tasks into multiple sprints (Cycle).")
+
+    if "t7_source_story" not in st.session_state:
+        st.session_state.t7_source_story = None
+    if "t7_source_tasks" not in st.session_state:
+        st.session_state.t7_source_tasks = []
+    if "t7_parent_feature" not in st.session_state:
+        st.session_state.t7_parent_feature = None
+    if "t7_sprints" not in st.session_state:
+        st.session_state.t7_sprints = []
+
+    # Step 1: Fetch Source Story
+    st.subheader("1. Fetch Source User Story")
+    col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
+    with col1:
+        t7_story_id = st.text_input("Enter User Story ID to Duplicate", key="t7_input")
+    with col2:
+        t7_fetch_btn = st.button("Fetch Story", key="t7_fetch")
+
+    if t7_fetch_btn and t7_story_id:
+        try:
+            with st.spinner("Fetching Story, Parent, and Tasks..."):
+                # Fetch Story
+                story = ado_api.get_work_item(t7_story_id.strip())
+                if story["Work Item Type"] != "User Story":
+                    st.error("The ID provided is not a User Story.")
+                else:
+                    st.session_state.t7_source_story = story
+
+                    # Fetch Parent (Feature)
+                    parent_feature = None
+                    child_task_ids = []
+
+                    if "Relations" in story:
+                        for rel in story["Relations"]:
+                            if rel["rel"] == "System.LinkTypes.Hierarchy-Reverse":
+                                # Parent
+                                parent_url = rel["url"]
+                                parent_id = parent_url.split("/")[-1]
+                                try:
+                                    parent_feature = ado_api.get_work_item(parent_id)
+                                except:
+                                    pass  # Could not fetch parent
+                            elif rel["rel"] == "System.LinkTypes.Hierarchy-Forward":
+                                # Child
+                                child_id = rel["url"].split("/")[-1]
+                                child_task_ids.append(child_id)
+
+                    st.session_state.t7_parent_feature = parent_feature
+
+                    # Fetch Tasks
+                    if child_task_ids:
+                        tasks = ado_api.get_work_items_batch(child_task_ids)
+                        st.session_state.t7_source_tasks = [
+                            t
+                            for t in tasks
+                            if t["Work Item Type"] == "Task" and t["State"] != "Removed"
+                        ]
+                    else:
+                        st.session_state.t7_source_tasks = []
+
+                    # Auto-detect Cycle from Story Iteration
+                    current_iter = story.get("Iteration Path", "")
+                    if current_iter:
+                        if "Sprint" in current_iter or "Iter" in current_iter:
+                            parts = current_iter.split("\\")
+                            if len(parts) > 1:
+                                inferred_cycle = "\\".join(parts[:-1])
+                                st.session_state.t7_cycle = inferred_cycle
+                        else:
+                            st.session_state.t7_cycle = current_iter
+
+                    msg = f"Fetched Story: {story['Title']}"
+                    if parent_feature:
+                        msg += f" (Parent: {parent_feature['Title']})"
+                    else:
+                        msg += " (No Parent Feature found - duplication might lack parent link)"
+                    msg += f" with {len(st.session_state.t7_source_tasks)} tasks."
+                    st.success(msg)
+
+        except Exception as e:
+            st.error(f"Error fetching story: {e}")
+
+    # Step 2: Select Sprints
+    if st.session_state.t7_source_story:
+        st.subheader("2. Select Target Sprints")
+
+        col_cyc1, col_cyc2 = st.columns([3, 1], vertical_alignment="bottom")
+        with col_cyc1:
+            t7_cycle_path = st.text_input(
+                "Cycle Path", value=r"Platts\Scrum\26.02", key="t7_cycle"
+            )
+        with col_cyc2:
+            t7_fetch_sprints_btn = st.button("Fetch Sprints", key="t7_fetch_sprints")
+
+        if t7_fetch_sprints_btn and t7_cycle_path:
+            with st.spinner("Fetching Sprints..."):
+                try:
+                    sprints = ado_api.get_iterations_by_path(t7_cycle_path)
+                    st.session_state.t7_sprints = sprints
+                    if not sprints:
+                        st.warning("No sprints found for this path.")
+                except Exception as e:
+                    st.error(f"Error fetching sprints: {e}")
+
+        if st.session_state.t7_sprints:
+            st.write("Select sprints to duplicate the story into:")
+
+            # Create a dataframe for selection
+            df_sprints = pd.DataFrame(st.session_state.t7_sprints)
+            if "Select" not in df_sprints.columns:
+                df_sprints["Select"] = True  # Default all selected
+
+            t7_selected_sprints_df = st.data_editor(
+                df_sprints[["Select", "Name", "Path"]],
+                column_config={
+                    "Select": st.column_config.CheckboxColumn(required=True)
+                },
+                disabled=["Name", "Path"],
+                hide_index=True,
+                key="t7_sprint_selector",
+            )
+
+            # Step 3: Replicate
+            st.subheader("3. Replicate")
+            t7_dry_run = st.checkbox("Dry Run", value=True, key="t7_dry")
+
+            if st.button("Duplicate Story & Tasks", key="t7_duplicate"):
+                selected_rows = t7_selected_sprints_df[
+                    t7_selected_sprints_df["Select"] == True
+                ]
+
+                if selected_rows.empty:
+                    st.warning("Please select at least one sprint.")
+                else:
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    success_count = 0
+                    errors = []
+                    total_ops = len(selected_rows)
+
+                    source_story = st.session_state.t7_source_story
+                    source_tasks = st.session_state.t7_source_tasks
+                    parent = st.session_state.t7_parent_feature
+
+                    if not parent:
+                        st.warning(
+                            "Proceeding without a Parent Feature link (none found on source)."
+                        )
+
+                    for i, row in enumerate(selected_rows.itertuples()):
+                        target_path = row.Path
+                        target_name = row.Name
+                        status_text.text(f"Duplicating to {target_name}...")
+
+                        try:
+                            # 1. Create Story
+                            story_data = {
+                                "Title": source_story["Title"],
+                                "Description": source_story["Description"],
+                                "Acceptance Criteria": source_story[
+                                    "Acceptance Criteria"
+                                ],
+                                "Story Points": source_story.get("Story Points", 0),
+                                "Iteration Path": target_path,
+                                "Area Path": source_story[
+                                    "Area Path"
+                                ],  # Keep same area
+                                "CMDB App Name": source_story.get("CMDB App Name", ""),
+                            }
+
+                            if not t7_dry_run:
+                                # We need a parent to use create_child_work_item efficiently
+                                # If we have a parent, use it.
+                                if parent:
+                                    new_story = ado_api.create_child_work_item(
+                                        parent, story_data, "User Story"
+                                    )
+                                else:
+                                    raise Exception(
+                                        "Cannot duplicate without a Parent Feature to attach to."
+                                    )
+
+                                # 2. Create Tasks
+                                for task in source_tasks:
+                                    task_data = {
+                                        "Title": task["Title"],
+                                        "Description": task["Description"],
+                                        "Original Estimate": task.get(
+                                            "Original Estimate", 0
+                                        ),
+                                        "Activity": task.get("Activity", "Development"),
+                                        "Iteration Path": target_path,
+                                        "Area Path": source_story["Area Path"],
+                                    }
+                                    ado_api.create_child_work_item(
+                                        new_story, task_data, "Task"
+                                    )
+
+                            else:
+                                time.sleep(0.5)
+
+                            success_count += 1
+                        except Exception as e:
+                            errors.append(f"Failed in {target_name}: {e}")
+
+                        progress_bar.progress((i + 1) / total_ops)
+
+                    if errors:
+                        st.error(f"Completed with {len(errors)} errors.")
+                        for e in errors:
+                            st.write(e)
+                    else:
+                        msg = (
+                            f"Dry run: Replicated to {success_count} sprints."
+                            if t7_dry_run
+                            else f"Successfully replicated to {success_count} sprints!"
+                        )
+                        st.success(msg)
 
 
 if __name__ == "__main__":
