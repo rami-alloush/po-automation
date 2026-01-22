@@ -1266,6 +1266,7 @@ with tab7:
                                     "Acceptance Criteria"
                                 ],
                                 "Story Points": source_story.get("Story Points", 0),
+                                "Assigned To": source_story.get("Assigned To", ""),
                                 "Iteration Path": target_path,
                                 "Area Path": source_story[
                                     "Area Path"
@@ -1293,6 +1294,10 @@ with tab7:
                                         "Original Estimate": task.get(
                                             "Original Estimate", 0
                                         ),
+                                        "Remaining Work": task.get(
+                                            "Original Estimate", 0
+                                        ),
+                                        "Assigned To": task.get("Assigned To", ""),
                                         "Activity": task.get("Activity", "Development"),
                                         "Iteration Path": target_path,
                                         "Area Path": source_story["Area Path"],
