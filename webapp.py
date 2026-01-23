@@ -72,7 +72,8 @@ with tab1:
     col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
     with col1:
         t1_user_story_ids = st.text_input(
-            "Enter User Story IDs (comma separated) or Query URL", key="t1_input"
+            "Enter User Story IDs (comma or space separated) or Query URL",
+            key="t1_input",
         )
     with col2:
         t1_fetch_btn = st.button("Fetch Stories", key="t1_fetch")
@@ -131,7 +132,11 @@ with tab1:
                     ids = ado_api.execute_query(input_val)
                 else:
                     # Assume comma-separated User Story IDs
-                    ids = [x.strip() for x in input_val.split(",") if x.strip()]
+                    ids = [
+                        x.strip()
+                        for x in input_val.replace(",", " ").split()
+                        if x.strip()
+                    ]
 
                 if ids:
                     stories = ado_api.get_work_items_batch(ids)
@@ -649,7 +654,7 @@ with tab4:
     col1, col2 = st.columns([3, 1], vertical_alignment="bottom")
     with col1:
         t4_feature_ids = st.text_input(
-            "Enter Feature IDs (comma separated)", key="t4_input"
+            "Enter Feature IDs (comma or space separated)", key="t4_input"
         )
     with col2:
         t4_fetch_btn = st.button("Fetch Features", key="t4_fetch")
@@ -657,7 +662,11 @@ with tab4:
     if t4_fetch_btn and t4_feature_ids:
         try:
             with st.spinner("Fetching Features and Stories..."):
-                ids = [x.strip() for x in t4_feature_ids.split(",") if x.strip()]
+                ids = [
+                    x.strip()
+                    for x in t4_feature_ids.replace(",", " ").split()
+                    if x.strip()
+                ]
                 if ids:
                     st.session_state.t4_features = {}
                     for f_id in ids:
