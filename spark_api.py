@@ -15,6 +15,53 @@ def get_env(name, required=True, default=None):
     return val
 
 
+DEFAULT_TASK_GEN_PROMPT = (
+    "You are an expert project management assistant. Your task is to analyze user stories and break them down into "
+    "actionable tasks. Rules: 1. Every story point equals 6 hours. 2. The sum of 'Original Estimate' for all tasks "
+    "MUST exactly equal (Story Points * 6). 3. You MUST include a final task with Title 'Testing' and 'Original Estimate' "
+    "of 1. 4. Distribute the remaining hours ((Story Points * 6) - 1) among the other actionable tasks. Return the tasks "
+    "in a structured JSON format with the following structure: { 'tasks': [ { 'Work Item Type': 'Task', 'Description': "
+    "<task_description>, 'Original Estimate': <original_estimate>, 'Title': <title>, 'State': <state>, 'Tags': <tags> } ] }. "
+    "IMPORTANT: Output ONLY valid JSON."
+)
+
+DEFAULT_STORY_SUGGEST_PROMPT = (
+    "You are an expert Product Owner. Your task is to analyze a Feature and its existing User Stories, identify gaps "
+    "in coverage, and suggest additional User Stories to fully achieve the Feature's objective. Return the suggested "
+    "stories in a structured JSON format with the following structure: { 'stories': [ { 'Work Item Type': 'User Story', "
+    "'Title': <title>, 'Description': <description>, 'Acceptance Criteria': <acceptance_criteria>, 'Story Points': "
+    "<estimated_points> } ] }. IMPORTANT: Output ONLY valid JSON."
+)
+
+DEFAULT_PLAN_REVIEW_PROMPT = (
+    "You are an expert Project Manager and Scrum Master. Your task is to review a Feature and its associated User Stories "
+    "(which form a plan). Analyze the execution order based on Iteration Paths. Identify any logic gaps, missing steps, "
+    "or dependency issues. Suggest a better order if needed. Identify potential external dependencies. Return the result "
+    "in valid JSON format: { 'suggestions': ['suggestion 1', ...], 'missing_steps': [{'Title': '...', 'Description': "
+    "'...'}], 'external_dependencies': ['dep 1', ...], 'proposed_order': [id1, id2, ...] }. IMPORTANT: Output ONLY valid JSON."
+)
+
+DEFAULT_FEATURE_DETAILS_PROMPT = (
+    "You are an expert Product Owner. Your task is to analyze a Feature and its child User Stories to generate a "
+    "comprehensive Feature definition. You must generate: 1. Description (Executive summary of what the feature delivers). "
+    "2. External Dependencies (List of dependencies). 3. Non-functional Requirements (List of NFRs). 4. Acceptance "
+    "Criteria (High-level ACs for the feature). Return the result in valid JSON format with these EXACT keys: { "
+    "'description': 'HTML string', 'external_dependencies': 'HTML string (ul/li) or empty string', "
+    "'non_functional_requirements': 'HTML string (ul/li) or empty string', 'acceptance_criteria': 'HTML string (ul/li)' }. "
+    "If there are no dependencies or NFRs, return an empty string or '<ul><li>None</li></ul>'. IMPORTANT: Output ONLY valid JSON."
+)
+
+DEFAULT_CHAT_EXTRACT_PROMPT = (
+    "You are an expert Product Owner. Your task is to extract structured User Stories from a conversation history. "
+    "Based on the discussion, identify the user stories that have been defined or agreed upon. "
+    "Return them in a valid JSON format with the following structure: "
+    "{ 'stories': [ { 'Work Item Type': 'User Story', 'Title': <title>, 'Description': <description>, "
+    "'Acceptance Criteria': <acceptance_criteria_as_html_ul_li_string>, 'Story Points': <estimated_points> } ] }. "
+    "Ensure 'Acceptance Criteria' is a single string containing HTML list elements (<ul><li>...</li></ul>), NOT a JSON list. "
+    "If no clear stories are defined, return { 'stories': [] }. IMPORTANT: Output ONLY valid JSON."
+)
+
+
 def get_spark_config():
     load_dotenv(override=True)
 
@@ -29,7 +76,7 @@ def get_spark_config():
     return api_key, url
 
 
-def generate_tasks(user_story_content):
+def generate_tasks(user_story_content, system_prompt=DEFAULT_TASK_GEN_PROMPT):
     api_key, url = get_spark_config()
 
     # Prepare the payload
@@ -38,7 +85,7 @@ def generate_tasks(user_story_content):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert project management assistant. Your task is to analyze user stories and break them down into actionable tasks. Rules: 1. Every story point equals 6 hours. 2. The sum of 'Original Estimate' for all tasks MUST exactly equal (Story Points * 6). 3. You MUST include a final task with Title 'Testing' and 'Original Estimate' of 1. 4. Distribute the remaining hours ((Story Points * 6) - 1) among the other actionable tasks. Return the tasks in a structured JSON format with the following structure: { 'tasks': [ { 'Work Item Type': 'Task', 'Description': <task_description>, 'Original Estimate': <original_estimate>, 'Title': <title>, 'State': <state>, 'Tags': <tags> } ] }. IMPORTANT: Output ONLY valid JSON.",
+                    "content": system_prompt,
                 },
                 {"role": "user", "content": json.dumps(user_story_content)},
             ],
@@ -81,7 +128,9 @@ def generate_tasks(user_story_content):
         raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
 
 
-def suggest_stories(feature, existing_stories):
+def suggest_stories(
+    feature, existing_stories, system_prompt=DEFAULT_STORY_SUGGEST_PROMPT
+):
     api_key, url = get_spark_config()
 
     # Prepare the existing stories summary
@@ -98,7 +147,7 @@ def suggest_stories(feature, existing_stories):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert Product Owner. Your task is to analyze a Feature and its existing User Stories, identify gaps in coverage, and suggest additional User Stories to fully achieve the Feature's objective. Return the suggested stories in a structured JSON format with the following structure: { 'stories': [ { 'Work Item Type': 'User Story', 'Title': <title>, 'Description': <description>, 'Acceptance Criteria': <acceptance_criteria>, 'Story Points': <estimated_points> } ] }. IMPORTANT: Output ONLY valid JSON.",
+                    "content": system_prompt,
                 },
                 {
                     "role": "user",
@@ -144,7 +193,7 @@ def suggest_stories(feature, existing_stories):
         raise Exception(f"Failed to parse JSON from Spark response: {response_content}")
 
 
-def review_plan(feature, user_stories):
+def review_plan(feature, user_stories, system_prompt=DEFAULT_PLAN_REVIEW_PROMPT):
     api_key, url = get_spark_config()
 
     # Prepare stories text
@@ -163,7 +212,7 @@ def review_plan(feature, user_stories):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert Project Manager and Scrum Master. Your task is to review a Feature and its associated User Stories (which form a plan). Analyze the execution order based on Iteration Paths. Identify any logic gaps, missing steps, or dependency issues. Suggest a better order if needed. Identify potential external dependencies. Return the result in valid JSON format: { 'suggestions': ['suggestion 1', ...], 'missing_steps': [{'Title': '...', 'Description': '...'}], 'external_dependencies': ['dep 1', ...], 'proposed_order': [id1, id2, ...] }. IMPORTANT: Output ONLY valid JSON.",
+                    "content": system_prompt,
                 },
                 {
                     "role": "user",
@@ -216,7 +265,9 @@ def strip_html(text):
     return re.sub(clean, "", text)
 
 
-def generate_feature_details(feature, user_stories):
+def generate_feature_details(
+    feature, user_stories, system_prompt=DEFAULT_FEATURE_DETAILS_PROMPT
+):
     api_key, url = get_spark_config()
 
     # Prepare stories text
@@ -235,7 +286,7 @@ def generate_feature_details(feature, user_stories):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert Product Owner. Your task is to analyze a Feature and its child User Stories to generate a comprehensive Feature definition. You must generate: 1. Description (Executive summary of what the feature delivers). 2. External Dependencies (List of dependencies). 3. Non-functional Requirements (List of NFRs). 4. Acceptance Criteria (High-level ACs for the feature). Return the result in valid JSON format with these EXACT keys: { 'description': 'HTML string', 'external_dependencies': 'HTML string (ul/li) or empty string', 'non_functional_requirements': 'HTML string (ul/li) or empty string', 'acceptance_criteria': 'HTML string (ul/li)' }. If there are no dependencies or NFRs, return an empty string or '<ul><li>None</li></ul>'. IMPORTANT: Output ONLY valid JSON.",
+                    "content": system_prompt,
                 },
                 {
                     "role": "user",
@@ -308,7 +359,7 @@ def chat_completion(messages):
     return response_json["choices"][0]["message"]["content"]
 
 
-def extract_stories_from_chat(chat_history):
+def extract_stories_from_chat(chat_history, system_prompt=DEFAULT_CHAT_EXTRACT_PROMPT):
     api_key, url = get_spark_config()
 
     # Convert chat history to a single text block for context
@@ -323,12 +374,7 @@ def extract_stories_from_chat(chat_history):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert Product Owner. Your task is to extract structured User Stories from a conversation history. "
-                    "Based on the discussion, identify the user stories that have been defined or agreed upon. "
-                    "Return them in a valid JSON format with the following structure: "
-                    "{ 'stories': [ { 'Work Item Type': 'User Story', 'Title': <title>, 'Description': <description>, 'Acceptance Criteria': <acceptance_criteria_as_html_ul_li_string>, 'Story Points': <estimated_points> } ] }. "
-                    "Ensure 'Acceptance Criteria' is a single string containing HTML list elements (<ul><li>...</li></ul>), NOT a JSON list. "
-                    "If no clear stories are defined, return { 'stories': [] }. IMPORTANT: Output ONLY valid JSON.",
+                    "content": system_prompt,
                 },
                 {
                     "role": "user",

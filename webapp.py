@@ -12,6 +12,30 @@ st.set_page_config(page_title="ADO Automation", layout="wide")
 st.title("ADO Automation Assistant")
 st.markdown("Automate your Azure DevOps workflows with AI.")
 
+
+@st.dialog("Edit System Prompt")
+def prompt_editor(session_key, default_val):
+    st.markdown("Edit the system prompt used for this task.")
+
+    # Initialize if not present
+    if session_key not in st.session_state:
+        st.session_state[session_key] = default_val
+
+    new_val = st.text_area(
+        "System Prompt", value=st.session_state[session_key], height=400
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Save", key=f"save_{session_key}"):
+            st.session_state[session_key] = new_val
+            st.rerun()
+    with col2:
+        if st.button("Reset to Default", key=f"reset_{session_key}"):
+            st.session_state[session_key] = default_val
+            st.rerun()
+
+
 # Tabs
 tab2, tab1, tab3, tab4, tab5, tab6, tab7 = st.tabs(
     [
@@ -27,7 +51,12 @@ tab2, tab1, tab3, tab4, tab5, tab6, tab7 = st.tabs(
 
 # --- Tab 1: Task Generator ---
 with tab1:
-    st.header("Task Generator")
+    col_h, col_btn = st.columns([0.95, 0.05])
+    with col_h:
+        st.header("Task Generator")
+    with col_btn:
+        if st.button("⚙️", key="t1_cfg", help="Edit Prompt"):
+            prompt_editor("t1_gen_prompt", spark_api.DEFAULT_TASK_GEN_PROMPT)
     st.markdown(
         "Generate tasks from User Stories using Spark API and upload them to Azure DevOps."
     )
@@ -140,7 +169,13 @@ with tab1:
             for i, story in enumerate(st.session_state.t1_user_stories):
                 status_text.text(f"Generating tasks for {story['ID']}...")
                 try:
-                    tasks_response = spark_api.generate_tasks(story)
+                    # Use custom prompt if set
+                    sys_prompt = st.session_state.get(
+                        "t1_gen_prompt", spark_api.DEFAULT_TASK_GEN_PROMPT
+                    )
+                    tasks_response = spark_api.generate_tasks(
+                        story, system_prompt=sys_prompt
+                    )
                     if "tasks" in tasks_response:
                         tasks = tasks_response["tasks"]
                         # Auto-assign story owner and set Remaining Work
@@ -254,7 +289,12 @@ with tab1:
 
 # --- Tab 2: User Story Suggestion ---
 with tab2:
-    st.header("User Story Suggestion")
+    col_h, col_btn = st.columns([0.95, 0.05])
+    with col_h:
+        st.header("User Story Suggestion")
+    with col_btn:
+        if st.button("⚙️", key="t2_cfg", help="Edit Prompt"):
+            prompt_editor("t2_suggest_prompt", spark_api.DEFAULT_STORY_SUGGEST_PROMPT)
     st.markdown("Analyze a Feature and suggest missing User Stories.")
 
     # Session State for Tab 2
@@ -330,8 +370,13 @@ with tab2:
         if st.button("Suggest Stories with Spark", key="t2_suggest"):
             try:
                 with st.spinner("Analyzing and Suggesting..."):
+                    sys_prompt = st.session_state.get(
+                        "t2_suggest_prompt", spark_api.DEFAULT_STORY_SUGGEST_PROMPT
+                    )
                     suggestion_response = spark_api.suggest_stories(
-                        feature, st.session_state.t2_existing_stories
+                        feature,
+                        st.session_state.t2_existing_stories,
+                        system_prompt=sys_prompt,
                     )
                     if "stories" in suggestion_response:
                         st.session_state.t2_suggested_stories = suggestion_response[
@@ -420,7 +465,12 @@ with tab2:
 
 # --- Tab 3: Plan Review ---
 with tab3:
-    st.header("Plan Review")
+    col_h, col_btn = st.columns([0.95, 0.05])
+    with col_h:
+        st.header("Plan Review")
+    with col_btn:
+        if st.button("⚙️", key="t3_cfg", help="Edit Prompt"):
+            prompt_editor("t3_review_prompt", spark_api.DEFAULT_PLAN_REVIEW_PROMPT)
     st.markdown("Review an existing Feature's plan (User Stories, Iterations, etc.)")
 
     # Session State for Tab 3
@@ -526,8 +576,11 @@ with tab3:
         if st.button("Review Plan", key="t3_review"):
             try:
                 with st.spinner("Reviewing Plan..."):
+                    sys_prompt = st.session_state.get(
+                        "t3_review_prompt", spark_api.DEFAULT_PLAN_REVIEW_PROMPT
+                    )
                     review_result = spark_api.review_plan(
-                        feature, st.session_state.t3_stories
+                        feature, st.session_state.t3_stories, system_prompt=sys_prompt
                     )
                     st.session_state.t3_review_result = review_result
             except Exception as e:
@@ -575,7 +628,12 @@ with tab3:
 
 # --- Tab 4: Feature Details ---
 with tab4:
-    st.header("Feature Details Generator")
+    col_h, col_btn = st.columns([0.95, 0.05])
+    with col_h:
+        st.header("Feature Details Generator")
+    with col_btn:
+        if st.button("⚙️", key="t4_cfg", help="Edit Prompt"):
+            prompt_editor("t4_details_prompt", spark_api.DEFAULT_FEATURE_DETAILS_PROMPT)
     st.markdown(
         "Generate Feature details (Description, Dependencies, NFRs, AC) from User Stories."
     )
@@ -641,8 +699,11 @@ with tab4:
             progress_bar = st.progress(0)
             for i, (f_id, data) in enumerate(st.session_state.t4_features.items()):
                 try:
+                    sys_prompt = st.session_state.get(
+                        "t4_details_prompt", spark_api.DEFAULT_FEATURE_DETAILS_PROMPT
+                    )
                     details = spark_api.generate_feature_details(
-                        data["feature"], data["stories"]
+                        data["feature"], data["stories"], system_prompt=sys_prompt
                     )
                     st.session_state.t4_features[f_id]["generated_details"] = details
 
@@ -1004,7 +1065,13 @@ with tab6:
                 message_placeholder.error(f"Error: {e}")
 
     # Extract Stories
-    st.subheader("2. Extract & Configuration")
+    col_sub, col_btn = st.columns([0.95, 0.05])
+    with col_sub:
+        st.subheader("2. Extract & Configuration")
+    with col_btn:
+        st.write("")  # Spacer logic might be needed or just align bottom
+        if st.button("⚙️", key="t6_cfg", help="Edit Extraction Prompt"):
+            prompt_editor("t6_extract_prompt", spark_api.DEFAULT_CHAT_EXTRACT_PROMPT)
 
     if st.button("Extract Stories from Chat", key="t6_extract"):
         if not st.session_state.t6_messages:
@@ -1012,8 +1079,11 @@ with tab6:
         else:
             with st.spinner("Analyzing chat history..."):
                 try:
+                    sys_prompt = st.session_state.get(
+                        "t6_extract_prompt", spark_api.DEFAULT_CHAT_EXTRACT_PROMPT
+                    )
                     result = spark_api.extract_stories_from_chat(
-                        st.session_state.t6_messages
+                        st.session_state.t6_messages, system_prompt=sys_prompt
                     )
                     if "stories" in result:
                         st.session_state.t6_extracted_stories = result["stories"]
