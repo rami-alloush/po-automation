@@ -6,6 +6,7 @@ import spark_api
 import json
 import time
 import urllib.parse
+from streamlit_quill import st_quill
 
 st.set_page_config(page_title="ADO Automation", layout="wide")
 
@@ -763,39 +764,37 @@ with tab4:
 
                 # Description
                 st.markdown("**Description**")
-                with st.expander("Preview", expanded=False):
-                    st.markdown(
-                        st.session_state[f"t4_desc_{f_id}"], unsafe_allow_html=True
-                    )
-                st.text_area("Description HTML", key=f"t4_desc_{f_id}", height=200)
+                st.session_state[f"t4_desc_{f_id}"] = st_quill(
+                    value=st.session_state[f"t4_desc_{f_id}"],
+                    html=True,
+                    key=f"t4_desc_quill_{f_id}",
+                )
 
                 col1, col2 = st.columns(2)
                 with col1:
                     # External Dependencies
                     st.markdown("**External Dependencies**")
-                    with st.expander("Preview", expanded=False):
-                        st.markdown(
-                            st.session_state[f"t4_dep_{f_id}"], unsafe_allow_html=True
-                        )
-                    st.text_area("Dependencies HTML", key=f"t4_dep_{f_id}", height=200)
+                    st.session_state[f"t4_dep_{f_id}"] = st_quill(
+                        value=st.session_state[f"t4_dep_{f_id}"],
+                        html=True,
+                        key=f"t4_dep_quill_{f_id}",
+                    )
 
                 with col2:
                     # Non Functional Requirements
                     st.markdown("**Non Functional Requirements**")
-                    with st.expander("Preview", expanded=False):
-                        st.markdown(
-                            st.session_state[f"t4_nfr_{f_id}"], unsafe_allow_html=True
-                        )
-                    st.text_area("NFRs HTML", key=f"t4_nfr_{f_id}", height=200)
+                    st.session_state[f"t4_nfr_{f_id}"] = st_quill(
+                        value=st.session_state[f"t4_nfr_{f_id}"],
+                        html=True,
+                        key=f"t4_nfr_quill_{f_id}",
+                    )
 
                 # Acceptance Criteria
                 st.markdown("**Acceptance Criteria**")
-                with st.expander("Preview", expanded=False):
-                    st.markdown(
-                        st.session_state[f"t4_ac_{f_id}"], unsafe_allow_html=True
-                    )
-                st.text_area(
-                    "Acceptance Criteria HTML", key=f"t4_ac_{f_id}", height=200
+                st.session_state[f"t4_ac_{f_id}"] = st_quill(
+                    value=st.session_state[f"t4_ac_{f_id}"],
+                    html=True,
+                    key=f"t4_ac_quill_{f_id}",
                 )
 
                 t4_updates_map[f_id] = {
