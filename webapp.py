@@ -7,11 +7,23 @@ import json
 import time
 import urllib.parse
 from streamlit_quill import st_quill
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="ADO Automation", layout="wide")
 
 st.title("ADO Automation Assistant")
 st.markdown("Automate your Azure DevOps workflows with AI.")
+
+
+def reset_session_state(prefix):
+    keys_to_del = [
+        k
+        for k in st.session_state.keys()
+        if k.startswith(prefix) and "_prompt" not in k
+    ]
+    for k in keys_to_del:
+        del st.session_state[k]
+    st.rerun()
 
 
 @st.dialog("Edit System Prompt")
@@ -37,24 +49,58 @@ def prompt_editor(session_key, default_val):
             st.rerun()
 
 
-# Tabs
-tab2, tab1, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-    [
-        "User Story Suggestion",
-        "Task Generator",
-        "Planning Revision",
-        "Feature Details",
-        "Story Sorter",
-        "Bulk Create",
-        "Story Replicator",
-    ]
-)
+# Navigation
+TABS = [
+    "User Story Suggestion",
+    "Task Generator",
+    "Planning Revision",
+    "Feature Details",
+    "Story Sorter",
+    "Bulk Create",
+    "Story Replicator",
+]
+
+tabs = st.tabs(TABS)
+
+# JS for URL Sync
+js = """
+<script>
+    function syncTabs() {
+        const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+        const params = new URLSearchParams(window.parent.location.search);
+        const activeTab = params.get('tab');
+
+        if (activeTab) {
+            for (let i = 0; i < tabs.length; i++) {
+                if (tabs[i].innerText === activeTab) {
+                    tabs[i].click();
+                    break;
+                }
+            }
+        }
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+                const newUrl = new URL(window.parent.location);
+                newUrl.searchParams.set('tab', tab.innerText);
+                window.parent.history.pushState({}, '', newUrl);
+            });
+        });
+    }
+    setTimeout(syncTabs, 300);
+</script>
+"""
+components.html(js, height=0)
+
 
 # --- Tab 1: Task Generator ---
-with tab1:
-    col_h, col_btn = st.columns([0.95, 0.05])
+with tabs[1]:
+    col_h, col_reset, col_btn = st.columns([0.85, 0.1, 0.05])
     with col_h:
         st.header("Task Generator")
+    with col_reset:
+        if st.button("Clear 🗑️", key="t1_reset", help="Reset Tab"):
+            reset_session_state("t1_")
     with col_btn:
         if st.button("⚙️", key="t1_cfg", help="Edit Prompt"):
             prompt_editor("t1_gen_prompt", spark_api.DEFAULT_TASK_GEN_PROMPT)
@@ -294,10 +340,14 @@ with tab1:
                 st.success(msg)
 
 # --- Tab 2: User Story Suggestion ---
-with tab2:
-    col_h, col_btn = st.columns([0.95, 0.05])
+# --- Tab 2: User Story Suggestion ---
+with tabs[0]:
+    col_h, col_reset, col_btn = st.columns([0.85, 0.1, 0.05])
     with col_h:
         st.header("User Story Suggestion")
+    with col_reset:
+        if st.button("Clear 🗑️", key="t2_reset", help="Reset Tab"):
+            reset_session_state("t2_")
     with col_btn:
         if st.button("⚙️", key="t2_cfg", help="Edit Prompt"):
             prompt_editor("t2_suggest_prompt", spark_api.DEFAULT_STORY_SUGGEST_PROMPT)
@@ -470,10 +520,13 @@ with tab2:
                 st.success(msg)
 
 # --- Tab 3: Plan Review ---
-with tab3:
-    col_h, col_btn = st.columns([0.95, 0.05])
+with tabs[2]:
+    col_h, col_reset, col_btn = st.columns([0.85, 0.1, 0.05])
     with col_h:
         st.header("Plan Review")
+    with col_reset:
+        if st.button("Clear 🗑️", key="t3_reset", help="Reset Tab"):
+            reset_session_state("t3_")
     with col_btn:
         if st.button("⚙️", key="t3_cfg", help="Edit Prompt"):
             prompt_editor("t3_review_prompt", spark_api.DEFAULT_PLAN_REVIEW_PROMPT)
@@ -633,10 +686,13 @@ with tab3:
             st.table(pd.DataFrame(ordered_display))
 
 # --- Tab 4: Feature Details ---
-with tab4:
-    col_h, col_btn = st.columns([0.95, 0.05])
+with tabs[3]:
+    col_h, col_reset, col_btn = st.columns([0.85, 0.1, 0.05])
     with col_h:
         st.header("Feature Details Generator")
+    with col_reset:
+        if st.button("Clear 🗑️", key="t4_reset", help="Reset Tab"):
+            reset_session_state("t4_")
     with col_btn:
         if st.button("⚙️", key="t4_cfg", help="Edit Prompt"):
             prompt_editor("t4_details_prompt", spark_api.DEFAULT_FEATURE_DETAILS_PROMPT)
@@ -844,8 +900,14 @@ with tab4:
                 st.success(msg)
 
 # --- Tab 5: Story Sorter ---
-with tab5:
-    st.header("Item Sorter (Stories & Bugs)")
+# --- Tab 5: Story Sorter ---
+with tabs[4]:
+    col_h, col_reset = st.columns([0.9, 0.1])
+    with col_h:
+        st.header("Item Sorter (Stories & Bugs)")
+    with col_reset:
+        if st.button("Clear 🗑️", key="t5_reset", help="Reset Tab"):
+            reset_session_state("t5_")
     st.markdown("Fetch User Stories and Bugs for a Feature and view them sorted.")
 
     if "t5_feature" not in st.session_state:
@@ -1012,8 +1074,14 @@ with tab5:
                         st.error(f"An unexpected error occurred: {e}")
 
 # --- Tab 6: Bulk Create (Chat) ---
-with tab6:
-    st.header("Bulk Create via Chat")
+# --- Tab 6: Bulk Create (Chat) ---
+with tabs[5]:
+    col_h, col_reset = st.columns([0.9, 0.1])
+    with col_h:
+        st.header("Bulk Create via Chat")
+    with col_reset:
+        if st.button("Clear 🗑️", key="t6_reset", help="Reset Tab"):
+            reset_session_state("t6_")
     st.markdown("Chat to define user stories, then extract and create them in bulk.")
 
     # Session State
@@ -1198,8 +1266,14 @@ with tab6:
 
 
 # --- Tab 7: Story Replicator ---
-with tab7:
-    st.header("Story Replicator")
+# --- Tab 7: Story Replicator ---
+with tabs[6]:
+    col_h, col_reset = st.columns([0.9, 0.1])
+    with col_h:
+        st.header("Story Replicator")
+    with col_reset:
+        if st.button("Clear 🗑️", key="t7_reset", help="Reset Tab"):
+            reset_session_state("t7_")
     st.markdown("Duplicate a User Story and its tasks into multiple sprints (Cycle).")
 
     if "t7_source_story" not in st.session_state:
