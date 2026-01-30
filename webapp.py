@@ -466,7 +466,7 @@ with tabs[0]:
                         else ""
                     )
                     if not val:
-                        val = "CI UDM - UNIFIED DATA MODEL NA"
+                        val = "CI INFORMATION HUB DIRECT CONNECT - IHDC"
                     df_stories[col] = val
                 else:
                     df_stories[col] = ""
@@ -800,7 +800,13 @@ with tabs[3]:
         for f_id, data in st.session_state.t4_features.items():
             feature = data["feature"]
 
-            # Initialize session state if not present (first load)
+            if f"t4_cmdb_{f_id}" not in st.session_state:
+                val = feature.get("CMDB App Name", "")
+                if not val:
+                    val = "CI INFORMATION HUB DIRECT CONNECT - IHDC"
+                st.session_state[f"t4_cmdb_{f_id}"] = val
+
+            # Initialize other fields if not present
             if f"t4_desc_{f_id}" not in st.session_state:
                 st.session_state[f"t4_desc_{f_id}"] = feature.get("Description", "")
             if f"t4_dep_{f_id}" not in st.session_state:
@@ -817,6 +823,13 @@ with tabs[3]:
                 )
 
             with st.expander(f"{feature['ID']}: {feature['Title']}", expanded=True):
+
+                # CMDB App Name (Required Field)
+                st.session_state[f"t4_cmdb_{f_id}"] = st.text_input(
+                    "CMDB App Name",
+                    value=st.session_state[f"t4_cmdb_{f_id}"],
+                    key=f"t4_cmdb_input_{f_id}",
+                )
 
                 # Description
                 st.markdown("**Description**")
@@ -862,6 +875,7 @@ with tabs[3]:
                     "Microsoft.VSTS.Common.AcceptanceCriteria": st.session_state[
                         f"t4_ac_{f_id}"
                     ],
+                    "Custom.CMDBAppName": st.session_state[f"t4_cmdb_{f_id}"],
                 }
 
         # Step 4: Upload
@@ -1050,13 +1064,39 @@ with tabs[4]:
                                 "Stack Rank Field", "Microsoft.VSTS.Common.StackRank"
                             )
 
-                            try:
-                                ado_api.update_work_item(
-                                    story["ID"], {rank_field: new_rank}
+                            updates = {rank_field: new_rank}
+
+                            # Ensure CMDB App Name is present if missing (required field)
+                            if not story.get("CMDB App Name"):
+                                updates["Custom.CMDBAppName"] = (
+                                    "CI INFORMATION HUB DIRECT CONNECT - IHDC"
                                 )
+
+                            # Handle Bug-specific required fields
+                            if story.get("Work Item Type") == "Bug":
+                                if not story.get("Found by Test Case"):
+                                    # Defaulting to "NO" as requested
+                                    updates["Custom.FoundbyTestCase"] = "NO"
+                                if not story.get("Identified By"):
+                                    updates["Custom.IdentifiedBy"] = "User Reported"
+
+                            try:
+                                ado_api.update_work_item(story["ID"], updates)
                                 updates_count += 1
                                 # Update local state too
                                 story["Stack Rank"] = new_rank
+                                if "Custom.CMDBAppName" in updates:
+                                    story["CMDB App Name"] = updates[
+                                        "Custom.CMDBAppName"
+                                    ]
+                                if "Custom.FoundbyTestCase" in updates:
+                                    story["Found by Test Case"] = updates[
+                                        "Custom.FoundbyTestCase"
+                                    ]
+                                if "Custom.IdentifiedBy" in updates:
+                                    story["Identified By"] = updates[
+                                        "Custom.IdentifiedBy"
+                                    ]
                             except Exception as e:
                                 errors.append(f"Failed to update {story['ID']}: {e}")
 
@@ -1195,7 +1235,7 @@ with tabs[5]:
         for c in cols:
             if c not in df_t6.columns:
                 if c == "CMDB App Name":
-                    df_t6[c] = "CI UDM - UNIFIED DATA MODEL NA"
+                    df_t6[c] = "CI INFORMATION HUB DIRECT CONNECT - IHDC"
                 else:
                     df_t6[c] = ""
 

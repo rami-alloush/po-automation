@@ -165,6 +165,15 @@ def get_work_items_batch(ids):
                 "Activity": work_item_details["fields"].get(
                     "Microsoft.VSTS.Common.Activity", "Development"
                 ),
+                "CMDB App Name": work_item_details["fields"].get(
+                    "Custom.CMDBAppName", ""
+                ),
+                "Found by Test Case": work_item_details["fields"].get(
+                    "Custom.FoundbyTestCase", 0
+                ),
+                "Identified By": work_item_details["fields"].get(
+                    "Custom.IdentifiedBy", ""
+                ),
             }
         )
     return items
