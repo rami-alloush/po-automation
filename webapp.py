@@ -7,7 +7,6 @@ import json
 import time
 import urllib.parse
 from streamlit_quill import st_quill
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="ADO Automation", layout="wide")
 
@@ -90,7 +89,7 @@ js = """
     setTimeout(syncTabs, 300);
 </script>
 """
-components.html(js, height=0)
+st.iframe(f"data:text/html,{urllib.parse.quote(js)}", height=1)
 
 
 # --- Tab 1: Task Generator ---

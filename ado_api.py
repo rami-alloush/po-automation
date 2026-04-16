@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import requests
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
@@ -42,6 +43,16 @@ def check_response(response, action_desc):
         raise Exception(
             f"Failed to {action_desc}: {response.status_code} - {response.text}"
         )
+
+
+def is_missing_value(value):
+    if value is None:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    if isinstance(value, str) and value.strip() == "":
+        return True
+    return False
 
 
 def get_work_item(work_item_id):
@@ -214,6 +225,14 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
     url = f"https://dev.azure.com/{organization}/{project}/_apis/wit/workitems/${type_encoded}?api-version=6.0"
 
     # Construct the JSON Patch document
+    area_path = item_data.get("Area Path")
+    if is_missing_value(area_path) and parent_work_item:
+        area_path = parent_work_item.get("Area Path")
+
+    iteration_path = item_data.get("Iteration Path")
+    if is_missing_value(iteration_path) and parent_work_item:
+        iteration_path = parent_work_item.get("Iteration Path")
+
     patch_document = [
         {
             "op": "add",
@@ -225,18 +244,25 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
             "path": "/fields/System.Description",
             "value": item_data.get("Description") or "",
         },
-        {
-            "op": "add",
-            "path": "/fields/System.AreaPath",
-            "value": item_data.get("Area Path") or parent_work_item["Area Path"],
-        },
-        {
-            "op": "add",
-            "path": "/fields/System.IterationPath",
-            "value": item_data.get("Iteration Path")
-            or parent_work_item["Iteration Path"],
-        },
     ]
+
+    if not is_missing_value(area_path):
+        patch_document.append(
+            {
+                "op": "add",
+                "path": "/fields/System.AreaPath",
+                "value": area_path,
+            }
+        )
+
+    if not is_missing_value(iteration_path):
+        patch_document.append(
+            {
+                "op": "add",
+                "path": "/fields/System.IterationPath",
+                "value": iteration_path,
+            }
+        )
 
     # Only add parent relation if parent_work_item is provided and has a URL
     if parent_work_item and "url" in parent_work_item:
@@ -253,37 +279,46 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
 
     # Add type-specific fields
     if work_item_type == "Task":
-        patch_document.append(
-            {
-                "op": "add",
-                "path": "/fields/Microsoft.VSTS.Scheduling.OriginalEstimate",
-                "value": item_data.get("Original Estimate"),
-            }
-        )
-        if "Remaining Work" in item_data:
+        original_estimate = item_data.get("Original Estimate")
+        if not is_missing_value(original_estimate):
             patch_document.append(
                 {
                     "op": "add",
-                    "path": "/fields/Microsoft.VSTS.Scheduling.RemainingWork",
-                    "value": item_data.get("Remaining Work"),
+                    "path": "/fields/Microsoft.VSTS.Scheduling.OriginalEstimate",
+                    "value": original_estimate,
                 }
             )
+
+        if "Remaining Work" in item_data:
+            remaining_work = item_data.get("Remaining Work")
+            if not is_missing_value(remaining_work):
+                patch_document.append(
+                    {
+                        "op": "add",
+                        "path": "/fields/Microsoft.VSTS.Scheduling.RemainingWork",
+                        "value": remaining_work,
+                    }
+                )
+
+        activity_value = item_data.get("Activity")
+        if is_missing_value(activity_value):
+            activity_value = "Development"
         patch_document.append(
             {
                 "op": "add",
                 "path": "/fields/Microsoft.VSTS.Common.Activity",
-                "value": item_data.get("Activity", "Development"),
+                "value": activity_value,
             }
         )
     elif work_item_type == "User Story":
         if "Acceptance Criteria" in item_data:
-            ac_value = item_data.get("Acceptance Criteria") or ""
-            # Safety check: if AC is a list, convert to HTML list string
+            ac_value = item_data.get("Acceptance Criteria")
+            if is_missing_value(ac_value):
+                ac_value = ""
             if isinstance(ac_value, list):
                 ac_value = (
                     "<ul>" + "".join([f"<li>{x}</li>" for x in ac_value]) + "</ul>"
                 )
-
             patch_document.append(
                 {
                     "op": "add",
@@ -291,30 +326,34 @@ def create_child_work_item(parent_work_item, item_data, work_item_type="Task"):
                     "value": ac_value,
                 }
             )
-        if "Story Points" in item_data:
-            patch_document.append(
-                {
-                    "op": "add",
-                    "path": "/fields/Microsoft.VSTS.Scheduling.StoryPoints",
-                    "value": item_data.get("Story Points"),
-                }
-            )
 
-    if "Assigned To" in item_data and item_data["Assigned To"]:
+        if "Story Points" in item_data:
+            story_points = item_data.get("Story Points")
+            if not is_missing_value(story_points):
+                patch_document.append(
+                    {
+                        "op": "add",
+                        "path": "/fields/Microsoft.VSTS.Scheduling.StoryPoints",
+                        "value": story_points,
+                    }
+                )
+
+    assigned_to = item_data.get("Assigned To")
+    if not is_missing_value(assigned_to):
         patch_document.append(
             {
                 "op": "add",
                 "path": "/fields/System.AssignedTo",
-                "value": item_data["Assigned To"],
+                "value": assigned_to,
             }
         )
 
     # Handle CMDB App Name (inherit from parent if not provided)
     cmdb_val = item_data.get("CMDB App Name")
-    if not cmdb_val and parent_work_item:
+    if is_missing_value(cmdb_val) and parent_work_item:
         cmdb_val = parent_work_item.get("CMDB App Name")
 
-    if cmdb_val:
+    if not is_missing_value(cmdb_val):
         patch_document.append(
             {
                 "op": "add",
