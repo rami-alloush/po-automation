@@ -72,7 +72,7 @@ def get_spark_config():
     app_id = get_env("SPARK_APP_ID", required=False, default="sparkassist")
     model = get_env("SPARK_MODEL", required=False, default="gpt-4o-2024-11-20")
 
-    url = f"{env_url}/v1/{app_id}/openai/deployments/{model}/chat/completions?api_version=2024-10-21"
+    url = f"{env_url}/v1/{app_id}/openai/deployments/{model}/chat/completions"
     return api_key, url
 
 
