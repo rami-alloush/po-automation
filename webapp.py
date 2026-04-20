@@ -1267,6 +1267,7 @@ with tabs[5]:
                 st.error("Parent Feature ID is required to create stories.")
                 stories_to_create = []
 
+            created_ids = []
             total = len(stories_to_create)
             for i, story_data in enumerate(stories_to_create):
                 status_text.text(f"Processing: {story_data.get('Title', 'Unknown')}")
@@ -1278,9 +1279,11 @@ with tabs[5]:
 
                 try:
                     if not t6_dry_run:
-                        ado_api.create_child_work_item(
+                        created_item = ado_api.create_child_work_item(
                             effective_parent, story_data, "User Story"
                         )
+                        if created_item and isinstance(created_item, dict) and "id" in created_item:
+                            created_ids.append(str(created_item["id"]))
                     else:
                         time.sleep(0.5)
                     success_count += 1
@@ -1294,14 +1297,18 @@ with tabs[5]:
                 st.error(f"Completed with {len(errors)} errors.")
                 for e in errors:
                     st.write(e)
+                if created_ids:
+                    st.info(f"Created story IDs: {','.join(created_ids)}")
             else:
                 if total > 0:
-                    msg = (
-                        f"Dry run: {success_count} stories would be created."
-                        if t6_dry_run
-                        else f"Created {success_count} stories!"
-                    )
-                    st.success(msg)
+                    if t6_dry_run:
+                        st.success(f"Dry run: {success_count} stories would be created.")
+                    else:
+                        st.success(
+                            f"Created {success_count} stories!"
+                        )
+                        if created_ids:
+                            st.info(f"Created story IDs: {','.join(created_ids)}")
 
 
 # --- Tab 7: Story Replicator ---
