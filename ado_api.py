@@ -63,15 +63,25 @@ def get_work_item(work_item_id):
     response = requests.get(url, auth=HTTPBasicAuth("", pat_token))
 
     work_item_details = check_response(response, "retrieve work item")
+    # Build a display string for Assigned To that includes email when available
+    _assigned_field = work_item_details["fields"].get("System.AssignedTo", {})
+    _assigned_display = _assigned_field.get("displayName", "Unassigned")
+    _assigned_email = (
+        _assigned_field.get("uniqueName")
+        or _assigned_field.get("mail")
+        or _assigned_field.get("email")
+    )
+    if _assigned_email:
+        _assigned_value = f"{_assigned_display} <{_assigned_email}>"
+    else:
+        _assigned_value = _assigned_display
 
     work_item = {
         "ID": work_item_details["id"],
         "Work Item Type": work_item_details["fields"]["System.WorkItemType"],
         "Description": work_item_details["fields"].get("System.Description", ""),
         "Title": work_item_details["fields"]["System.Title"],
-        "Assigned To": work_item_details["fields"]
-        .get("System.AssignedTo", {})
-        .get("displayName", "Unassigned"),
+        "Assigned To": _assigned_value,
         "State": work_item_details["fields"]["System.State"],
         "Tags": work_item_details["fields"].get("System.Tags", "").split("; "),
         "Created By": work_item_details["fields"]["System.CreatedBy"]["displayName"],
@@ -133,6 +143,12 @@ def get_work_items_batch(ids):
 
     items = []
     for work_item_details in data["value"]:
+        # Build Assigned To string including email/uniqueName when available
+        _af = work_item_details["fields"].get("System.AssignedTo", {})
+        _ad = _af.get("displayName", "Unassigned")
+        _ae = _af.get("uniqueName") or _af.get("mail") or _af.get("email")
+        _assigned = f"{_ad} <{_ae}>" if _ae else _ad
+
         items.append(
             {
                 "ID": work_item_details["id"],
@@ -141,9 +157,7 @@ def get_work_items_batch(ids):
                     "System.Description", ""
                 ),
                 "Title": work_item_details["fields"]["System.Title"],
-                "Assigned To": work_item_details["fields"]
-                .get("System.AssignedTo", {})
-                .get("displayName", "Unassigned"),
+                "Assigned To": _assigned,
                 "State": work_item_details["fields"]["System.State"],
                 "Story Points": work_item_details["fields"].get(
                     "Microsoft.VSTS.Scheduling.StoryPoints", 0
